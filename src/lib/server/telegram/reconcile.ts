@@ -19,6 +19,8 @@ type Filter = { kind: 'all' } | { kind: 'metadata' } | { kind: 'pipeline'; id: s
 
 interface Group extends Omit<MultipartMarker, 'index' | 'partChecksum'> {
 	chunks: FilePart[];
+	/** Further messages for an ord already seen: other copies of the same backup. */
+	repeats: FilePart[];
 }
 
 const SEPARATOR = String.fromCharCode(0);
@@ -29,6 +31,24 @@ const SEPARATOR = String.fromCharCode(0);
  */
 export function multipartGroupKey(name: string, size: number, total: number): string {
 	return [name, size, total].join(SEPARATOR);
+}
+
+/** The complete copies among repeated chunks, which come newest first. */
+function completeCopies(repeats: FilePart[], total: number): FilePart[][] {
+	const copies: FilePart[][] = [];
+	if (repeats.length < total || total === 0) return copies;
+
+	const byOrd = new Map<number, FilePart[]>();
+	for (const chunk of repeats) byOrd.set(chunk.ord, [...(byOrd.get(chunk.ord) ?? []), chunk]);
+	for (;;) {
+		const copy: FilePart[] = [];
+		for (let ord = 0; ord < total; ord++) {
+			const chunk = byOrd.get(ord)?.[copies.length];
+			if (!chunk) return copies;
+			copy.push(chunk);
+		}
+		copies.push(copy);
+	}
 }
 
 function keepMarked(filter: Filter, marker: MultipartMarker): boolean {
@@ -68,11 +88,11 @@ export async function walkAndMint(
 	const minted: string[] = [];
 	const groups = new Map<string, Group>();
 
-	const groupFor = (marker: Omit<Group, 'chunks'>): Group => {
+	const groupFor = (marker: Omit<Group, 'chunks' | 'repeats'>): Group => {
 		const key = multipartGroupKey(marker.name, marker.size, marker.total);
 		let group = groups.get(key);
 		if (!group) {
-			group = { ...marker, chunks: [] };
+			group = { ...marker, chunks: [], repeats: [] };
 			groups.set(key, group);
 		}
 		return group;
@@ -106,8 +126,10 @@ export async function walkAndMint(
 			const group = groupFor(shared);
 			group.checksum ??= marker.checksum;
 			group.metadata ??= marker.metadata;
-			if (!group.chunks.some((chunk) => chunk.ord === index)) {
-				group.chunks.push({
+			// A staged chunk is seen again by the walk: the same message, not another copy.
+			if (!group.chunks.some((chunk) => chunk.tgMessageId === message.id)) {
+				const repeated = group.chunks.some((chunk) => chunk.ord === index);
+				(repeated ? group.repeats : group.chunks).push({
 					ord: index,
 					tgMessageId: message.id,
 					sizeBytes: document.size,
@@ -168,11 +190,23 @@ export async function walkAndMint(
 			continue;
 		}
 
-		// Trust the declared size only when the chunks add up to it.
-		const sum = chunks.reduce((bytes, chunk) => bytes + chunk.sizeBytes, 0);
-		const finalSize = size > 0 && size === sum ? size : sum;
-		const id = db.healAndMint({ name, finalSize, mime, caption, checksum, metadata, chunks });
-		if (id) minted.push(id);
+		// Each copy is a backup of its own. With one hidden, deleting the other would
+		// report success and the backup would be back after a restart.
+		for (const copy of [chunks, ...completeCopies(group.repeats, total)]) {
+			// Trust the declared size only when the chunks add up to it.
+			const sum = copy.reduce((bytes, chunk) => bytes + chunk.sizeBytes, 0);
+			const finalSize = size > 0 && size === sum ? size : sum;
+			const id = db.healAndMint({
+				name,
+				finalSize,
+				mime,
+				caption,
+				checksum,
+				metadata,
+				chunks: copy
+			});
+			if (id) minted.push(id);
+		}
 		if (full) db.deletePendingByIdentity(name, size, total);
 	}
 
