@@ -1,11 +1,12 @@
 // Uploads by path: only from inside the data root.
-import { readdir, realpath, stat } from 'node:fs/promises';
-import { isAbsolute, resolve, sep } from 'node:path';
+import { readdir, stat } from 'node:fs/promises';
+import { isAbsolute, sep } from 'node:path';
 import mime from 'mime';
 import { log } from '$lib/server/logger';
 import { isAllowedBackup } from '$utils/telegram/mediaType';
 import type { TelegramUploadSnapshot } from '$types/telegram.type';
 import type { BackupGroup } from './backup-group';
+import { isUnderDataRoot, resolveUploadPath } from './data-root';
 import { StorageError } from './errors';
 import type { TelegramStorage } from './storage';
 import { MAX_UPLOAD_BYTES, type UploadRequest } from './upload';
@@ -31,14 +32,6 @@ export function fileNameOf(path: string): string | null {
 	return last === undefined || last === '..' ? null : last;
 }
 
-/** Compares real paths, so neither symlinks nor `..` get around it. */
-export async function isUnderDataRoot(path: string, root: string): Promise<boolean> {
-	const canonical = await realpath(path).catch(() => resolve(path));
-	const canonicalRoot = await realpath(root).catch(() => resolve(root));
-	if (canonical === canonicalRoot) return true;
-	return canonical.startsWith(canonicalRoot.endsWith(sep) ? canonicalRoot : canonicalRoot + sep);
-}
-
 async function checkPath(storage: TelegramStorage, raw: string) {
 	const path = raw.trim();
 	if (path === '') throw StorageError.badRequest('path is required');
@@ -46,7 +39,12 @@ async function checkPath(storage: TelegramStorage, raw: string) {
 	if (!(await isUnderDataRoot(path, storage.dataRoot))) {
 		throw StorageError.badRequest('path is not under the storage data root');
 	}
-	return { path, info: await stat(path) };
+	const info = await stat(path);
+	// The root itself is fine as a folder: the walk skips the app's state in it.
+	if (!(await resolveUploadPath(path, storage.dataRoot))) {
+		throw StorageError.badRequest("path is inside the app's own data, which is never uploaded");
+	}
+	return { path, info };
 }
 
 function describeFile(path: string, size: number, input: PathUploadInput): UploadRequest {
@@ -69,7 +67,7 @@ export async function uploadFromPath(
 	const { path, info } = await checkPath(storage, input.path);
 	if (!info.isFile()) throw StorageError.badRequest('path is not a regular file');
 	const request = describeFile(path, info.size, input);
-	return (await group.files.uploadLocalFile(path, request)).id;
+	return (await group.files.uploadLocalFile(path, request, storage.dataRoot)).id;
 }
 
 /** Queue a background upload of a zip, or of every zip under a folder. */
@@ -103,8 +101,11 @@ async function startFolder(
 	{ metadata, text }: PathUploadInput,
 	refId: string | undefined
 ): Promise<TelegramUploadSnapshot> {
-	const files = await collectFiles(folder);
-	if (files.length === 0) throw StorageError.badRequest('directory contains no regular files');
+	const files = await collectFiles(folder, storage.dataRoot);
+	if (files.length === 0)
+		throw StorageError.badRequest(
+			'directory contains no regular files (links out of the data folder are not followed)'
+		);
 
 	const folderRef = refId || fileNameOf(folder) || '';
 	let first: TelegramUploadSnapshot | null = null;
@@ -141,9 +142,23 @@ async function startFolder(
 	return first;
 }
 
-/** Paths are bytes: Linux file names needn't be UTF-8. */
-export async function collectFiles(root: string): Promise<{ path: Buffer; size: number }[]> {
+/** Errors of a link that leads nowhere readable. */
+const BROKEN_LINK = new Set(['ENOENT', 'ELOOP', 'ENOTDIR', 'EACCES']);
+
+/**
+ * Every file under a folder whose real location may be uploaded. Links are
+ * followed only within the data root, and each real folder is read once, so
+ * loops end. Paths are bytes: Linux file names needn't be UTF-8.
+ */
+export async function collectFiles(
+	root: string,
+	dataRoot: string
+): Promise<{ path: Buffer; size: number }[]> {
 	const files: { path: Buffer; size: number }[] = [];
+	const start = await resolveUploadPath(root, dataRoot);
+	if (!start) return files;
+
+	const visited = new Set([start.toString('latin1')]);
 	const pending: Buffer[] = [Buffer.from(root)];
 	const separator = Buffer.from(sep);
 
@@ -154,9 +169,29 @@ export async function collectFiles(root: string): Promise<{ path: Buffer; size: 
 				: Buffer.concat([directory, separator]);
 		for (const entry of await readdir(directory, { encoding: 'buffer' })) {
 			const path = Buffer.concat([prefix, entry]);
-			const info = await stat(path);
-			if (info.isDirectory()) pending.push(path);
-			else if (info.isFile()) files.push({ path, size: info.size });
+
+			let real: Buffer | null;
+			try {
+				real = await resolveUploadPath(path, dataRoot);
+			} catch (error) {
+				if (!BROKEN_LINK.has((error as NodeJS.ErrnoException).code ?? '')) throw error;
+				log.info(`skipping ${path.toString()}: it doesn't resolve`);
+				continue;
+			}
+			if (!real) {
+				log.info(`skipping ${path.toString()}: outside the data folder, or the app's own data`);
+				continue;
+			}
+
+			const info = await stat(real);
+			if (info.isDirectory()) {
+				const key = real.toString('latin1');
+				if (visited.has(key)) continue;
+				visited.add(key);
+				pending.push(path);
+			} else if (info.isFile()) {
+				files.push({ path, size: info.size });
+			}
 		}
 	}
 

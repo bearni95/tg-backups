@@ -56,7 +56,7 @@ export class TelegramStorage {
 	) {
 		this.groups = new Groups(dataRoot, () => this.requireClient());
 		this.uploads = new UploadRegistry((job, request) =>
-			job.group.files.uploadLocalFile(job.path, request)
+			job.group.files.uploadLocalFile(job.path, request, dataRoot)
 		);
 		this.login = new LoginFlow(() => this.requireClient());
 	}

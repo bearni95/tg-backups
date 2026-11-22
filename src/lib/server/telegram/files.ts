@@ -11,6 +11,7 @@ import type { FileRow } from '$types/telegram-server.type';
 import { contentSha256 } from './backup';
 import { FileSource, type ByteSource } from './byte-source';
 import type { BackupGroup } from './backup-group';
+import { openUploadFile } from './data-root';
 import * as download from './download';
 import { StorageError } from './errors';
 import { reconcileIndex } from './reconcile';
@@ -50,14 +51,23 @@ export class BackupFiles {
 		return result;
 	}
 
-	/** The size comes from the disk, whatever the request says. */
-	async uploadLocalFile(path: string | Buffer, request: UploadRequest): Promise<UploadResult> {
-		const info = await stat(path);
-		if (!info.isFile()) throw StorageError.badRequest('path is not a regular file');
-		if (info.size > MAX_UPLOAD_BYTES) throw StorageError.fileTooLarge(MAX_UPLOAD_BYTES);
+	/**
+	 * The size comes from the disk, whatever the request says. Pass `dataRoot` for
+	 * any path a caller chose: it is confined to the data root as it opens.
+	 */
+	async uploadLocalFile(
+		path: string | Buffer,
+		request: UploadRequest,
+		dataRoot?: string
+	): Promise<UploadResult> {
+		if (!(await stat(path)).isFile()) throw StorageError.badRequest('path is not a regular file');
 
-		const handle = await open(path, 'r');
+		const handle = dataRoot ? await openUploadFile(path, dataRoot) : await open(path, 'r');
 		try {
+			// Of what was opened, which is all that gets read.
+			const info = await handle.stat();
+			if (!info.isFile()) throw StorageError.badRequest('path is not a regular file');
+			if (info.size > MAX_UPLOAD_BYTES) throw StorageError.fileTooLarge(MAX_UPLOAD_BYTES);
 			return await this.uploadSource({ ...request, totalSize: info.size }, new FileSource(handle));
 		} finally {
 			await handle.close();

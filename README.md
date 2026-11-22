@@ -26,6 +26,7 @@ Start the built app with `pnpm start` or `node server.ts`, not `node dist`, whic
 - Groups are remembered per account. On another machine, sign in and pick the group under "Use an existing group".
 - Zips are split into 50 MiB MTProto chunks with metadata captions, up to 200 GiB per zip.
 - Small zips can be picked in the browser. For large ones, put the zip in `~/tg-backups` and back it up by path to get background upload, pause and progress.
+- Backing up a folder follows links only inside `~/tg-backups`, and never takes the app's own `telegram` folder.
 - The stored name carries a content fingerprint (`db.tgb-<hash>.zip`), so versions with the same name never mix. The app shows and restores the original name.
 - An interrupted backup is listed as incomplete. Upload the same zip again to resume it.
 - Backups uploaded by another machine appear after a backend restart, because the group is scanned once per connection.
