@@ -37,8 +37,15 @@ export class BackupFiles {
 
 		if (result.sha256 !== null && result.sha256 !== digest) {
 			// The zip was still being written: what landed isn't what was hashed.
-			await this.deleteIfExists(result.id);
-			throw StorageError.checksumMismatch(digest, result.sha256);
+			let note = '';
+			try {
+				await this.deleteIfExists(result.id);
+			} catch (error) {
+				log.warn(`could not remove a damaged upload: ${StorageError.from(error).message}`);
+				note =
+					'; the damaged copy could not be removed and is still listed, so delete it and do not restore it';
+			}
+			throw StorageError.checksumMismatch(digest, result.sha256, note);
 		}
 		return result;
 	}

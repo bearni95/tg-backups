@@ -44,6 +44,8 @@ export class FakeTelegram {
 	/** What Telegram reports per group id. */
 	settings = new Map<number, { hidden: boolean; ttl: number }>();
 	rooms = new Map<number, Room>();
+	/** Skipped by deletes, which still report success. */
+	undeletable = new Set<number>();
 	qr: 'pending' | 'success' | 'password' | 'migrate' = 'pending';
 	/** The kind of group the invite, username or dialog resolves to. */
 	basicGroup = false;
@@ -328,7 +330,10 @@ export class FakeTelegram {
 			case 'channels.deleteMessages':
 			case 'messages.deleteMessages':
 				if (request.id.length > 100) throw InvocationError.rpc(400, 'LIMIT_INVALID');
-				this.removeFrom('channel' in request ? channelOf(request.channel) : CHANNEL_ID, request.id);
+				this.removeFrom(
+					'channel' in request ? channelOf(request.channel) : CHANNEL_ID,
+					request.id.filter((id) => !this.undeletable.has(id))
+				);
 				return { _: 'messages.affectedMessages', pts: 1, ptsCount: request.id.length };
 			case 'upload.saveFilePart':
 			case 'upload.saveBigFilePart': {

@@ -184,6 +184,28 @@ export class IndexDb {
 		this.run('DELETE FROM tg_pending_part');
 	}
 
+	/**
+	 * These messages are gone from Telegram. A backup that lost all of them goes;
+	 * one that lost some becomes incomplete, and resumable.
+	 */
+	forgetMessages(messageIds: number[]): void {
+		const affected = new Set<string>();
+		for (const messageId of messageIds) {
+			const owners = this.all<{ id: string }>(
+				'SELECT tg_file_id AS id FROM tg_file_part WHERE tg_message_id = ?',
+				messageId
+			);
+			for (const { id } of owners) affected.add(id);
+			this.run('DELETE FROM tg_file_part WHERE tg_message_id = ?', messageId);
+			this.run('DELETE FROM tg_pending_part WHERE tg_message_id = ?', messageId);
+		}
+		for (const id of affected) {
+			if (this.listParts(id).length === 0) this.delete(id);
+			// A resume only picks up rows without a checksum.
+			else this.run('UPDATE tg_files SET checksum_sha256 = NULL WHERE id = ?', id);
+		}
+	}
+
 	/** Upserts, so a re-pushed chunk replaces its stale row. */
 	insertPart(fileId: string, part: FilePart): void {
 		this.run(

@@ -2,7 +2,8 @@ import { log } from '$lib/server/logger';
 import { telegramMessageAdapter } from '$adapters/classes/telegram-message.adapter';
 import type { FilePart, FileRow, PeerRef, StoredDocument } from '$types/telegram-server.type';
 import {
-	deleteMessagesInBatches,
+	deleteAndConfirm,
+	deleteMessages,
 	getMessagesById,
 	iterateHistory,
 	MESSAGES_PER_CALL
@@ -135,14 +136,25 @@ async function* downloadDocument(
 	}
 }
 
-/** Delete one backup from the group and the index. */
+/**
+ * Delete one backup. The index only forgets what Telegram confirms is gone, and
+ * stops at the first refusal, so a refused delete leaves the backup whole.
+ */
 export async function deleteFile(
 	{ connection, db, peer }: BackupGroup,
 	row: FileRow
 ): Promise<void> {
 	const ids = db.listParts(row.id).map((part) => part.tgMessageId);
 	if (ids.length === 0) ids.push(row.tgMessageId);
-	await deleteMessagesInBatches(connection, peer, ids);
+
+	let done = 0;
+	for (let i = 0; i < ids.length; i += MESSAGES_PER_CALL) {
+		const batch = ids.slice(i, i + MESSAGES_PER_CALL);
+		const { deleted, remaining, error } = await deleteAndConfirm(connection, peer, batch);
+		db.forgetMessages(deleted);
+		done += deleted.length;
+		if (remaining.length > 0) throw StorageError.deleteFailed(ids.length - done, ids.length, error);
+	}
 
 	// An interrupted backup may be staged. Left behind, those dead message ids
 	// would be fused into a re-upload of the same zip.
@@ -150,12 +162,38 @@ export async function deleteFile(
 	db.delete(row.id);
 }
 
-/** Delete every message in the group and clear the index. Returns the message count. */
+/**
+ * Delete everything in the group and return how many messages went. Service
+ * messages ("group created") are best effort: Telegram won't delete all of them.
+ */
 export async function deleteAll({ connection, db, peer: target }: BackupGroup): Promise<number> {
 	const ids: number[] = [];
-	for await (const message of iterateHistory(connection, target)) ids.push(message.id);
+	const serviceIds: number[] = [];
+	for await (const message of iterateHistory(connection, target)) {
+		if (message._ === 'message') ids.push(message.id);
+		else if (message._ === 'messageService') serviceIds.push(message.id);
+	}
 
-	await deleteMessagesInBatches(connection, target, ids);
+	let left = 0;
+	let cause: unknown = null;
+	for (let i = 0; i < ids.length; i += MESSAGES_PER_CALL) {
+		const batch = ids.slice(i, i + MESSAGES_PER_CALL);
+		const { deleted, remaining, error } = await deleteAndConfirm(connection, target, batch);
+		db.forgetMessages(deleted);
+		left += remaining.length;
+		if (remaining.length > 0) cause ??= error;
+	}
+
+	// Apart, or one of them would fail a whole batch of backups.
+	for (let i = 0; i < serviceIds.length; i += MESSAGES_PER_CALL) {
+		try {
+			await deleteMessages(connection, target, serviceIds.slice(i, i + MESSAGES_PER_CALL));
+		} catch (error) {
+			log.info(`service messages left in the group: ${StorageError.from(error).message}`);
+		}
+	}
+
+	if (left > 0) throw StorageError.deleteFailed(left, ids.length, cause);
 	db.clearAll();
 	log.info(`deleted all ${ids.length} messages from the group`);
 	return ids.length;

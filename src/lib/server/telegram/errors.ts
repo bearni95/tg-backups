@@ -14,6 +14,7 @@ const STATUS = {
 	bad_request: 400,
 	not_found: 404,
 	backup_incomplete: 409,
+	delete_failed: 409,
 	group_required: 409,
 	group_unavailable: 409,
 	group_not_found: 404,
@@ -124,8 +125,27 @@ export class StorageError extends Error {
 		);
 	}
 
-	static checksumMismatch(expected: string, actual: string) {
-		const message = `checksum mismatch: expected ${expected}, got ${actual}`;
+	static deleteFailed(left: number, total: number, cause: unknown) {
+		if (cause !== null) {
+			const mapped = StorageError.from(cause);
+			// These say better what to do.
+			if (mapped.code === 'rate_limited' || mapped.code === 'not_authenticated') return mapped;
+		}
+		const forbidden =
+			cause === null ||
+			(InvocationError.is(cause) &&
+				(cause.matches('MESSAGE_DELETE_FORBIDDEN') || cause.matches('CHAT_ADMIN_REQUIRED')));
+		const reason = forbidden
+			? 'only the uploader or a group admin can delete them'
+			: StorageError.from(cause).message;
+		return new StorageError(
+			'delete_failed',
+			`Telegram did not delete ${left} of ${total} messages, so what is left is still listed: ${reason}`
+		);
+	}
+
+	static checksumMismatch(expected: string, actual: string, note = '') {
+		const message = `checksum mismatch: expected ${expected}, got ${actual}${note}`;
 		return new StorageError('checksum_mismatch', message);
 	}
 

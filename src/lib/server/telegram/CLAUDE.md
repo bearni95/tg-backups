@@ -46,6 +46,7 @@ Existing installs and existing groups depend on these.
 - Credentials priority: `credentials.json`, then environment, then build-time values.
 - Chunks go in order (50 MiB each), with up to 8 parts of 512 KiB in flight.
 - A resumed upload has a null full-file checksum, as does a reconciled one.
+- A delete only forgets messages `deleteAndConfirm` saw gone. Never trust a delete call's own result: Telegram skips silently.
 - Only complete backups restore. A short restore must error, never end cleanly.
 - Message ids go to Telegram at most 100 per call. Re-fetch each chunk's message just before streaming, because file references expire.
 - Never read an upload with `request.formData()`: it buffers the whole zip.

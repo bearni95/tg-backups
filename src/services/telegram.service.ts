@@ -310,13 +310,20 @@ class TelegramService {
 	}
 
 	async deleteFile(id: string): Promise<void> {
-		await telegramSource.deleteFile(id, this.requireGroupId());
-		await this.refreshFiles();
+		try {
+			await telegramSource.deleteFile(id, this.requireGroupId());
+		} finally {
+			// Also when refused: part of it may have gone.
+			await this.refreshFiles();
+		}
 	}
 
 	async deleteAllFiles(): Promise<void> {
-		await telegramSource.deleteAllFiles(this.requireGroupId());
-		await this.refreshFiles();
+		try {
+			await telegramSource.deleteAllFiles(this.requireGroupId());
+		} finally {
+			await this.refreshFiles();
+		}
 	}
 
 	downloadUrl(id: string, groupId: string): string {

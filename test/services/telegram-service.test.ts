@@ -316,6 +316,17 @@ describe('telegramService', () => {
 			await telegramService.deleteFile('id/with spaces');
 		});
 
+		it('a refused delete rejects and still refreshes the list', async () => {
+			const files = [{ id: 'kept', complete: false }];
+			const fetchMock = vi
+				.fn()
+				.mockResolvedValueOnce(errJson(409, { error: 'refused', code: 'delete_failed' }))
+				.mockResolvedValueOnce(okJson({ files }));
+			vi.stubGlobal('fetch', fetchMock);
+			await expect(telegramService.deleteFile('kept')).rejects.toThrow('refused');
+			expect(get(telegramService.files)).toEqual(files);
+		});
+
 		it('deleteAllFiles POSTs delete-all then refreshes', async () => {
 			vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okNoContent()));
 			await telegramService.deleteAllFiles();

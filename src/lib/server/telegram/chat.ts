@@ -2,7 +2,6 @@
 import { randomBytes } from 'node:crypto';
 import { Long, type tl } from '@mtcute/node';
 import mime from 'mime';
-import { log } from '$lib/server/logger';
 import { telegramMessageAdapter } from '$adapters/classes/telegram-message.adapter';
 import { telegramPeerAdapter } from '$adapters/classes/telegram-peer.adapter';
 import type { PeerRef } from '$types/telegram-server.type';
@@ -104,22 +103,28 @@ export async function deleteMessages(
 	}
 }
 
-/** Best effort, in batches: one bad id mustn't strand the rest. */
-export async function deleteMessagesInBatches(
+/**
+ * Delete up to 100 messages, then look at what is really gone. Telegram can
+ * answer success having skipped what the account may not delete, and an error
+ * can follow a delete that worked.
+ */
+export async function deleteAndConfirm(
 	connection: Connection,
 	peer: PeerRef,
 	ids: number[]
-): Promise<void> {
-	for (let i = 0; i < ids.length; i += MESSAGES_PER_CALL) {
-		const batch = ids.slice(i, i + MESSAGES_PER_CALL);
-		try {
-			await deleteMessages(connection, peer, batch);
-		} catch (error) {
-			log.warn(
-				`delete of ${batch.length} messages failed (continuing): ${StorageError.from(error).message}`
-			);
-		}
+): Promise<{ deleted: number[]; remaining: number[]; error: unknown }> {
+	let failure: unknown = null;
+	try {
+		await deleteMessages(connection, peer, ids);
+	} catch (error) {
+		failure = error;
 	}
+	const found = await getMessagesById(connection, peer, ids);
+	return {
+		deleted: ids.filter((_, i) => found[i] === null),
+		remaining: ids.filter((_, i) => found[i] !== null),
+		error: failure
+	};
 }
 
 /** Post an uploaded file as a document and return its message id. */
