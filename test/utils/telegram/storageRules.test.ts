@@ -1,10 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import {
-	accessGroupInviteUrl,
-	parseGroupIdCandidates,
-	parseGroupUsername,
-	parseInviteHash
-} from '../../../src/utils/telegram/accessGroup';
 import { originalName, storedName } from '../../../src/utils/telegram/backupName';
 import { isAllowedBackup, ZIP_MIME_TYPES } from '../../../src/utils/telegram/mediaType';
 
@@ -49,50 +43,5 @@ describe('mediaType', () => {
 		['fake.zip', 'text/html']
 	])('rejects %s as %s', (name, mime) => {
 		expect(isAllowedBackup(name, mime)).toBe(false);
-	});
-});
-
-describe('accessGroup', () => {
-	const hash = 'hAJfgmURLbxhYzM0';
-
-	it.each([
-		`https://t.me/+${hash}`,
-		`http://t.me/+${hash}`,
-		`t.me/+${hash}`,
-		`telegram.me/+${hash}`,
-		`+${hash}`,
-		`https://t.me/joinchat/${hash}`,
-		`  https://t.me/+${hash}  `
-	])('finds the invite hash in %s', (spec) => {
-		expect(parseInviteHash(spec)).toBe(hash);
-	});
-
-	it.each(['@my_group', 'my_group', '-1001234567890', '+'])('%s is not an invite', (spec) => {
-		expect(parseInviteHash(spec)).toBeNull();
-	});
-
-	it('reads usernames', () => {
-		expect(parseGroupUsername('@my_group')).toBe('my_group');
-		expect(parseGroupUsername('my_group')).toBe('my_group');
-		expect(parseGroupUsername('  @spaced  ')).toBe('spaced');
-		expect(parseGroupUsername('-1001234567890')).toBeNull();
-		expect(parseGroupUsername('1234567890')).toBeNull();
-		expect(parseGroupUsername('@')).toBeNull();
-	});
-
-	it('reads numeric ids', () => {
-		expect(parseGroupIdCandidates('-1001234567890')).toEqual([1001234567890, 1234567890]);
-		expect(parseGroupIdCandidates('1234567890')).toEqual([1234567890]);
-		expect(parseGroupIdCandidates('-987654')).toEqual([987654]);
-		expect(parseGroupIdCandidates('my_group')).toBeNull();
-		expect(parseGroupIdCandidates('@my_group')).toBeNull();
-		expect(parseGroupIdCandidates('')).toBeNull();
-	});
-
-	it('derives the link to share', () => {
-		expect(accessGroupInviteUrl(`t.me/joinchat/${hash}`)).toBe(`https://t.me/+${hash}`);
-		expect(accessGroupInviteUrl('@my_group')).toBe('https://t.me/my_group');
-		expect(accessGroupInviteUrl('-1001234567890')).toBeNull();
-		expect(accessGroupInviteUrl(null)).toBeNull();
 	});
 });

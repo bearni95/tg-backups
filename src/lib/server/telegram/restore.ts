@@ -3,21 +3,21 @@ import { originalName } from '$utils/telegram/backupName';
 import { parseByteRange } from '$utils/http/byteRange';
 import { attachmentDisposition } from '$utils/http/contentDisposition';
 import { StorageError } from './errors';
-import type { TelegramStorage } from './storage';
+import type { BackupGroup } from './backup-group';
 
 /** Chunks buffered ahead of the browser: about 4 MiB. */
 const READ_AHEAD_CHUNKS = 8;
 
 /** The HTTP response restoring one backup, with single byte-range support. */
 export async function restoreResponse(
-	storage: TelegramStorage,
+	group: BackupGroup,
 	id: string,
 	request: Request
 ): Promise<Response> {
-	const row = storage.db.get(id);
+	const row = group.db.get(id);
 	if (!row) throw StorageError.notFound();
 	// Nothing is useful in part of a zip.
-	if (!storage.db.isComplete(row)) throw StorageError.backupIncomplete();
+	if (!group.db.isComplete(row)) throw StorageError.backupIncomplete();
 
 	const total = Math.max(0, row.sizeBytes);
 	const headers = new Headers({ 'accept-ranges': 'bytes' });
@@ -34,7 +34,7 @@ export async function restoreResponse(
 		headers.set('content-range', `bytes ${range.start}-${range.end}/${total}`);
 	}
 
-	const bytes = await storage.files.downloadRange(id, range.start, range.end);
+	const bytes = await group.files.downloadRange(id, range.start, range.end);
 
 	headers.set(
 		'content-type',

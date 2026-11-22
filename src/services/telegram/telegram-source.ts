@@ -2,6 +2,8 @@ import type {
 	TelegramAuthOutcome,
 	TelegramCredentials,
 	TelegramFile,
+	TelegramGroup,
+	TelegramGroupInfo,
 	TelegramQrStep,
 	TelegramStatus,
 	TelegramUploadSnapshot
@@ -28,20 +30,24 @@ export interface TelegramSource {
 	submitCode(code: string): Promise<TelegramAuthOutcome>;
 	submitPassword(password: string): Promise<TelegramAuthOutcome>;
 	logout(): Promise<void>;
-	recheckAccess(): Promise<void>;
+	/** Creates a Telegram group and selects it. */
+	createGroup(title: string): Promise<TelegramGroup>;
+	listAvailableGroups(): Promise<TelegramGroup[]>;
+	selectGroup(id: string): Promise<TelegramGroup>;
+	getGroupInfo(id: string): Promise<TelegramGroupInfo>;
 	/** Full media file list. The service sets its `files` store from this. */
-	listFiles(): Promise<TelegramFile[]>;
+	listFiles(groupId: string): Promise<TelegramFile[]>;
 	/** Metadata-sidecar-only listing (the catalog fast path). */
-	scanMetadata(): Promise<TelegramFile[]>;
+	scanMetadata(groupId: string): Promise<TelegramFile[]>;
 	/** Single attempt to mint/return the media row for a pipeline id. The
 	 * service wraps this with the 404 retry/backoff loop. */
-	loadMediaForPipeline(pipelineId: string): Promise<TelegramFile>;
-	uploadFile(file: File): Promise<void>;
-	deleteFile(id: string): Promise<void>;
-	deleteAllFiles(): Promise<void>;
+	loadMediaForPipeline(pipelineId: string, groupId: string): Promise<TelegramFile>;
+	uploadFile(file: File, groupId: string): Promise<void>;
+	deleteFile(id: string, groupId: string): Promise<void>;
+	deleteAllFiles(groupId: string): Promise<void>;
 	/** Synchronous — used directly as a download link `href`. */
-	downloadUrl(id: string): string;
-	startUpload(input: StartUploadInput): Promise<TelegramUploadSnapshot>;
+	downloadUrl(id: string, groupId: string): string;
+	startUpload(input: StartUploadInput, groupId: string): Promise<TelegramUploadSnapshot>;
 	listUploads(): Promise<TelegramUploadSnapshot[]>;
 	pauseUpload(uploadId: string): Promise<void>;
 	resumeUpload(uploadId: string): Promise<void>;

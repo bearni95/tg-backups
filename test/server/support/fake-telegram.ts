@@ -20,6 +20,13 @@ interface SavedUpload {
 	parts: Map<number, Buffer>;
 }
 
+interface Room {
+	chat: tl.TypeChat;
+	messages: tl.TypeMessage[];
+	nextId: number;
+	archived: boolean;
+}
+
 interface Call {
 	request: tl.RpcMethod;
 	options: InvokeOptions;
@@ -33,6 +40,10 @@ export class FakeTelegram {
 	authorized = true;
 	member = true;
 	premigrateDc: number | null = null;
+	mainTitle = 'tgb';
+	/** What Telegram reports per group id. */
+	settings = new Map<number, { hidden: boolean; ttl: number }>();
+	rooms = new Map<number, Room>();
 	qr: 'pending' | 'success' | 'password' | 'migrate' = 'pending';
 	/** The kind of group the invite, username or dialog resolves to. */
 	basicGroup = false;
@@ -47,6 +58,8 @@ export class FakeTelegram {
 		null;
 
 	private nextId = 1;
+	private nextRoomId = 9000;
+	private nextDocument = 1;
 	private uploads = new Map<string, SavedUpload>();
 	private documents = new Map<string, Buffer>();
 
@@ -78,7 +91,8 @@ export class FakeTelegram {
 			return {
 				_: 'chat',
 				id: CHANNEL_ID,
-				title: 'tgb',
+				title: this.mainTitle,
+				left: !this.member,
 				photo: { _: 'chatPhotoEmpty' },
 				participantsCount: 1,
 				date: 1,
@@ -90,7 +104,8 @@ export class FakeTelegram {
 			megagroup: true,
 			id: CHANNEL_ID,
 			accessHash: CHANNEL_HASH,
-			title: 'tgb',
+			title: this.mainTitle,
+			left: !this.member,
 			photo: { _: 'chatPhotoEmpty' },
 			date: 1
 		};
@@ -110,6 +125,29 @@ export class FakeTelegram {
 		return this.messages.flatMap((message) => (message._ === 'message' ? [message.message] : []));
 	}
 
+	addGroup(
+		title: string,
+		{ archived = false, ...flags }: Partial<tl.RawChannel> & { archived?: boolean } = {}
+	) {
+		const id = this.nextRoomId++;
+		const chat: tl.RawChannel = {
+			_: 'channel',
+			megagroup: true,
+			id,
+			accessHash: Long.fromNumber(id * 7),
+			title,
+			photo: { _: 'chatPhotoEmpty' },
+			date: 1,
+			...flags
+		};
+		this.rooms.set(id, { chat, messages: [], nextId: 1, archived });
+		return id;
+	}
+
+	messagesIn(roomId: number): tl.TypeMessage[] {
+		return roomId === CHANNEL_ID ? this.messages : this.rooms.get(roomId)!.messages;
+	}
+
 	addText(text = ''): number {
 		const id = this.nextId++;
 		this.messages.push({ _: 'message', id, peerId: this.peer, date: id, message: text });
@@ -122,24 +160,28 @@ export class FakeTelegram {
 		{
 			caption = '',
 			mimeType = 'application/zip',
-			dcId = 2
-		}: { caption?: string; mimeType?: string; dcId?: number } = {}
+			dcId = 2,
+			roomId = CHANNEL_ID
+		}: { caption?: string; mimeType?: string; dcId?: number; roomId?: number } = {}
 	): number {
-		const id = this.nextId++;
-		this.documents.set(String(id), Buffer.from(bytes));
-		this.messages.push({
+		const room = this.rooms.get(roomId);
+		// Message ids count per group, as on Telegram. Document ids are global.
+		const id = room ? room.nextId++ : this.nextId++;
+		const documentId = this.nextDocument++;
+		this.documents.set(String(documentId), Buffer.from(bytes));
+		this.messagesIn(roomId).push({
 			_: 'message',
 			id,
-			peerId: this.peer,
+			peerId: room ? { _: 'peerChannel', channelId: roomId } : this.peer,
 			date: id,
 			message: caption,
 			media: {
 				_: 'messageMediaDocument',
 				document: {
 					_: 'document',
-					id: Long.fromNumber(id),
+					id: Long.fromNumber(documentId),
 					accessHash: Long.ONE,
-					fileReference: new Uint8Array([id & 0xff]),
+					fileReference: new Uint8Array([documentId & 0xff]),
 					date: id,
 					mimeType,
 					size: bytes.length,
@@ -152,7 +194,13 @@ export class FakeTelegram {
 	}
 
 	remove(...ids: number[]): void {
-		this.messages = this.messages.filter((message) => !ids.includes(message.id));
+		this.removeFrom(CHANNEL_ID, ids);
+	}
+
+	private removeFrom(roomId: number, ids: number[]): void {
+		const left = this.messagesIn(roomId).filter((message) => !ids.includes(message.id));
+		if (roomId === CHANNEL_ID) this.messages = left;
+		else this.rooms.get(roomId)!.messages = left;
 	}
 
 	async handle(request: tl.RpcMethod, options: InvokeOptions): Promise<unknown> {
@@ -208,17 +256,41 @@ export class FakeTelegram {
 			case 'auth.logOut':
 				this.authorized = false;
 				return { _: 'auth.loggedOut' };
-			case 'messages.checkChatInvite':
-				if (request.hash === 'bad') throw InvocationError.rpc(400, 'INVITE_HASH_INVALID');
-				return this.member
-					? { _: 'chatInviteAlready', chat: this.chat }
-					: { _: 'chatInvite', title: 'tgb', participantsCount: 1 };
-			case 'contacts.resolveUsername':
-				if (request.username === 'missing') throw InvocationError.rpc(400, 'USERNAME_NOT_OCCUPIED');
-				return { peer: this.peer, users: [], chats: [this.chat] };
-			case 'channels.getParticipant':
-				if (!this.member) throw InvocationError.rpc(400, 'USER_NOT_PARTICIPANT');
-				return {};
+			case 'channels.createChannel': {
+				const id = this.addGroup(request.title, { creator: true });
+				// The worst defaults an account can have.
+				this.settings.set(id, { hidden: true, ttl: 604800 });
+				return {
+					_: 'updates',
+					updates: [],
+					users: [],
+					chats: [this.rooms.get(id)!.chat],
+					date: 1,
+					seq: 0
+				};
+			}
+			case 'channels.togglePreHistoryHidden':
+				this.settingsOf(channelOf(request.channel)).hidden = request.enabled;
+				return { _: 'updates', updates: [], users: [], chats: [], date: 1, seq: 0 };
+			case 'messages.setHistoryTTL':
+				this.settingsOf(roomOf(request.peer)).ttl = request.period;
+				return { _: 'updates', updates: [], users: [], chats: [], date: 1, seq: 0 };
+			case 'channels.getFullChannel': {
+				const id = channelOf(request.channel);
+				const room = this.rooms.get(id);
+				if (id !== CHANNEL_ID && !room) throw InvocationError.rpc(400, 'CHANNEL_PRIVATE');
+				const { hidden, ttl } = this.settingsOf(id);
+				return {
+					fullChat: {
+						_: 'channelFull',
+						id,
+						hiddenPrehistory: hidden,
+						ttlPeriod: ttl || undefined,
+						exportedInvite: { _: 'chatInviteExported', link: `https://t.me/+invite${id}` }
+					},
+					chats: [room?.chat ?? this.chat]
+				};
+			}
 			case 'messages.getFullChat':
 				return {
 					fullChat: {
@@ -227,31 +299,36 @@ export class FakeTelegram {
 							_: 'chatParticipants',
 							participants: this.member ? [{ userId: USER_ID }] : []
 						}
-					}
+					},
+					chats: [this.chat]
 				};
 			case 'messages.getDialogs':
 				return this.dialogs(request);
 			case 'messages.getHistory': {
-				const messages = [...this.messages]
+				const all = this.messagesIn(roomOf(request.peer));
+				const messages = [...all]
 					.sort((a, b) => b.id - a.id)
 					.filter((message) => !request.offsetId || message.id < request.offsetId)
 					.slice(0, request.limit);
-				const count = this.messages.length;
+				const count = all.length;
 				return { _: 'messages.channelMessages', count, messages, users: [], chats: [] };
 			}
 			case 'channels.getMessages':
 			case 'messages.getMessages': {
 				if (request.id.length > 100) throw InvocationError.rpc(400, 'LIMIT_INVALID');
+				const found = this.messagesIn(
+					'channel' in request ? channelOf(request.channel) : CHANNEL_ID
+				);
 				const messages = request.id.map((input) => {
 					const id = input._ === 'inputMessageID' ? input.id : 0;
-					return this.messages.find((message) => message.id === id) ?? { _: 'messageEmpty', id };
+					return found.find((message) => message.id === id) ?? { _: 'messageEmpty', id };
 				});
 				return { _: 'messages.messages', messages, users: [], chats: [] };
 			}
 			case 'channels.deleteMessages':
 			case 'messages.deleteMessages':
 				if (request.id.length > 100) throw InvocationError.rpc(400, 'LIMIT_INVALID');
-				this.remove(...request.id);
+				this.removeFrom('channel' in request ? channelOf(request.channel) : CHANNEL_ID, request.id);
 				return { _: 'messages.affectedMessages', pts: 1, ptsCount: request.id.length };
 			case 'upload.saveFilePart':
 			case 'upload.saveBigFilePart': {
@@ -314,7 +391,8 @@ export class FakeTelegram {
 		}
 		this.uploads.delete(file.id.toString());
 
-		const id = this.addDocument(file.name, bytes, { caption: request.message, mimeType });
+		const roomId = roomOf(request.peer);
+		const id = this.addDocument(file.name, bytes, { caption: request.message, mimeType, roomId });
 		return {
 			_: 'updates',
 			updates: [{ _: 'updateMessageID', id, randomId: request.randomId }],
@@ -325,25 +403,53 @@ export class FakeTelegram {
 		};
 	}
 
+	private settingsOf(id: number) {
+		let settings = this.settings.get(id);
+		if (!settings) {
+			settings = { hidden: false, ttl: 0 };
+			this.settings.set(id, settings);
+		}
+		return settings;
+	}
+
 	private dialogs(request: tl.messages.RawGetDialogsRequest) {
-		const all = Array.from({ length: this.dialogsBefore }, (_, i) => ({
-			_: 'dialog',
-			peer: { _: 'peerUser', userId: i + 1 },
-			topMessage: i + 1
-		})) as { _: string; peer: tl.TypePeer; topMessage: number }[];
-		if (this.member) all.push({ _: 'dialog', peer: this.peer, topMessage: 999999 });
+		const archive = request.folderId === 1;
+		const all: { _: string; peer: tl.TypePeer; topMessage: number }[] = [];
+		const chats: tl.TypeChat[] = [];
+		if (!archive) {
+			for (let i = 1; i <= this.dialogsBefore; i++) {
+				all.push({ _: 'dialog', peer: { _: 'peerUser', userId: i }, topMessage: i });
+			}
+			if (this.member) {
+				all.push({ _: 'dialog', peer: this.peer, topMessage: 999999 });
+				chats.push(this.chat);
+			}
+		}
+		for (const [id, room] of this.rooms) {
+			if (room.archived !== archive) continue;
+			all.push({ _: 'dialog', peer: { _: 'peerChannel', channelId: id }, topMessage: 1 });
+			chats.push(room.chat);
+		}
 
 		const offset = request.offsetPeer._ === 'inputPeerUser' ? request.offsetPeer.userId : 0;
-		const dialogs = all.slice(offset, offset + request.limit);
 		return {
 			_: 'messages.dialogsSlice',
 			count: all.length,
-			dialogs,
+			dialogs: all.slice(offset, offset + request.limit),
 			messages: [],
 			users: [],
-			chats: [this.chat]
+			chats
 		};
 	}
+}
+
+function channelOf(channel: tl.TypeInputChannel): number {
+	if (channel._ !== 'inputChannel') throw InvocationError.rpc(400, 'CHANNEL_INVALID');
+	return channel.channelId;
+}
+
+function roomOf(peer: tl.TypeInputPeer): number {
+	return peer._ === 'inputPeerChannel' ? peer.channelId : CHANNEL_ID;
 }
 
 class FakeTransport implements Transport {

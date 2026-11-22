@@ -170,6 +170,7 @@ async function completeLogin(
 	if (user._ !== 'user' || !user.accessHash) {
 		throw StorageError.internal('signed-in user has no peer reference');
 	}
+	connection.setAccount(user.id);
 	connection.session.setSelf({ id: user.id, accessHash: user.accessHash, bot: !!user.bot });
 	return user;
 }

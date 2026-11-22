@@ -122,7 +122,7 @@ describe('password login on the real client', () => {
 		);
 
 		await client.prepare();
-		const connection = new Connection(transport, session, 12345, 'hash', null);
+		const connection = new Connection(transport, session, 12345, 'hash');
 		expect(await submitPassword(connection, password, 'secret')).toEqual(user);
 
 		const sent = call.mock.calls[0][0] as unknown as tl.auth.RawCheckPasswordRequest;

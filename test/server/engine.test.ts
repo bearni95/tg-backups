@@ -12,6 +12,7 @@ import {
 	PauseControl,
 	waitWhilePaused
 } from '../../src/lib/server/telegram/controls';
+import type { BackupGroup } from '../../src/lib/server/telegram/backup-group';
 import { StorageError } from '../../src/lib/server/telegram/errors';
 import { InvocationError, isTransient } from '../../src/lib/server/telegram/invocation-error';
 import { multipartGroupKey } from '../../src/lib/server/telegram/reconcile';
@@ -49,6 +50,9 @@ describe('errors', () => {
 		[StorageError.invalidPassword(), 'invalid_password', 400],
 		[StorageError.badRequest('x'), 'bad_request', 400],
 		[StorageError.notFound(), 'not_found', 404],
+		[StorageError.groupNotFound(), 'group_not_found', 404],
+		[StorageError.groupRequired(), 'group_required', 409],
+		[StorageError.groupUnavailable(), 'group_unavailable', 409],
 		[StorageError.backupIncomplete(), 'backup_incomplete', 409],
 		[StorageError.uploadAborted(), 'upload_aborted', 409],
 		[StorageError.fileTooLarge(10), 'file_too_large', 413],
@@ -285,7 +289,8 @@ describe('upload registry', () => {
 		name,
 		mimeType: 'application/zip',
 		totalBytes: 100,
-		refId: 'ref'
+		refId: 'ref',
+		group: { id: 'channel-1', title: 'One' } as BackupGroup
 	});
 	const done = { id: 'file', tgMessageId: 1, sha256: null };
 

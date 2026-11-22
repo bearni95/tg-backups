@@ -39,24 +39,31 @@ export interface TelegramStatus {
 	connected: boolean;
 	/** Signed in to Telegram (valid session), regardless of group membership. */
 	signedIn: boolean;
-	/** Fully cleared to use the app: signed in and (when gating is enabled) a
-	 * member of the required Telegram group. */
+	/** Signed in, with the account known: groups are per account. */
 	authorized: boolean;
-	/** Signed in but not a member of the required group — the gate shows the
-	 * "ask an admin to add you" screen. */
-	accessDenied: boolean;
-	/** Whether this deployment gates login on membership of the shared Telegram
-	 * group at all (`TGB_TELEGRAM_ACCESS_GROUP` set). Lets the login UI show
-	 * the requirement up front — before sign-in — not just after a denial. */
-	accessGroupRequired: boolean;
-	/** A shareable `https://t.me/…` link for the required group, so the UI can
-	 * render a join link + QR code for non-members. Null when gating is disabled
-	 * or the spec is a bare numeric id with no public link. */
-	accessGroupInvite: string | null;
 	loginInProgress: TelegramLoginStage | null;
 	/** Where the pending code went; set only while `loginInProgress === 'awaiting_code'`. */
 	codeDelivery: TelegramCodeDelivery | null;
 	user: TelegramUser | null;
+	/** The groups this account stores backups in. */
+	groups: TelegramGroup[];
+	/** Null until one is created or chosen. */
+	activeGroupId: string | null;
+}
+
+export interface TelegramGroup {
+	/** `channel-<id>` or `chat-<id>`. */
+	id: string;
+	title: string;
+}
+
+export interface TelegramGroupInfo extends TelegramGroup {
+	/** Null when this account can't share one. */
+	invite: string | null;
+	/** Set when the group deletes its messages, backups included. */
+	autoDeleteSeconds: number | null;
+	/** New members can't see the backups already there. */
+	historyHidden: boolean;
 }
 
 export interface TelegramCredentials {
@@ -113,6 +120,9 @@ export interface TelegramChunkSnapshot {
 export interface TelegramUploadSnapshot {
 	uploadId: string;
 	refId: string;
+	/** Where it is going, whichever group is selected now. */
+	groupId: string;
+	groupTitle: string;
 	name: string;
 	status: TelegramUploadStatus;
 	bytesUploaded: number;

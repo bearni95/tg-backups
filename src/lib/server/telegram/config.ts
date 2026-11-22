@@ -78,8 +78,3 @@ export function credentialsFromBuild(
 	}
 	return credentials;
 }
-
-/** The group that is both the login gate and the storage. Read fresh on every call. */
-export function accessGroupFromEnv(): string | null {
-	return process.env.TGB_TELEGRAM_ACCESS_GROUP?.trim() || null;
-}

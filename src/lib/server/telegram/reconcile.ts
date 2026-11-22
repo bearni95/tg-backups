@@ -9,8 +9,7 @@ import { asObject, stringifyCanonical } from '$utils/json/losslessJson';
 import { isAllowedBackup } from '$utils/telegram/mediaType';
 import type { FilePart, MultipartMarker } from '$types/telegram-server.type';
 import { iterateHistory } from './chat';
-import type { Connection } from './connection';
-import type { IndexDb } from './db';
+import type { BackupGroup } from './backup-group';
 
 /**
  * `all` also adopts unmarked zips and stages incomplete groups across walks.
@@ -39,35 +38,32 @@ function keepMarked(filter: Filter, marker: MultipartMarker): boolean {
 	return metadata?.pipelineId === filter.id && metadata.role !== 'metadata';
 }
 
-export async function reconcileIndex(connection: Connection, db: IndexDb): Promise<number> {
-	const { value, ran } = await connection.indexReconciled.run(
-		async () => (await walkAndMint(connection, db, { kind: 'all' })).length
+export async function reconcileIndex(group: BackupGroup): Promise<number> {
+	const { value, ran } = await group.indexReconciled.run(
+		async () => (await walkAndMint(group, { kind: 'all' })).length
 	);
 	return ran ? value : 0;
 }
 
-export async function reconcileMetadataOnly(connection: Connection, db: IndexDb): Promise<number> {
-	const { value, ran } = await connection.metadataReconciled.run(
-		async () => (await walkAndMint(connection, db, { kind: 'metadata' })).length
+export async function reconcileMetadataOnly(group: BackupGroup): Promise<number> {
+	const { value, ran } = await group.metadataReconciled.run(
+		async () => (await walkAndMint(group, { kind: 'metadata' })).length
 	);
 	return ran ? value : 0;
 }
 
 export async function reconcileMediaForPipeline(
-	connection: Connection,
-	db: IndexDb,
+	group: BackupGroup,
 	id: string
 ): Promise<string | null> {
-	return (await walkAndMint(connection, db, { kind: 'pipeline', id }))[0] ?? null;
+	return (await walkAndMint(group, { kind: 'pipeline', id }))[0] ?? null;
 }
 
 /** Returns the ids it minted. */
 export async function walkAndMint(
-	connection: Connection,
-	db: IndexDb,
+	{ connection, db, peer: target }: BackupGroup,
 	filter: Filter
 ): Promise<string[]> {
-	const target = await connection.targetPeer();
 	const full = filter.kind === 'all';
 	const minted: string[] = [];
 	const groups = new Map<string, Group>();

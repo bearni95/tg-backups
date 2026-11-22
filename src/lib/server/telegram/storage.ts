@@ -5,9 +5,7 @@ import { Semaphore } from '$lib/server/sync';
 import { parseJson } from '$utils/json/losslessJson';
 import type { TelegramCredentials } from '$types/telegram.type';
 import type { TransferPayload } from '$types/telegram-server.type';
-import { AccessKey } from './access-cookie';
 import {
-	accessGroupFromEnv,
 	clearCredentials,
 	credentialsFromBuild,
 	credentialsFromEnv,
@@ -15,12 +13,11 @@ import {
 	saveCredentials
 } from './config';
 import { Connection } from './connection';
-import { IndexDb } from './db';
 import { StorageError } from './errors';
-import { BackupFiles } from './files';
+import { Groups } from './groups';
 import { LoginFlow } from './login';
-import { indexPath, sessionPath, telegramDir } from './paths';
-import { FileSession, writeSessionFile } from './session';
+import { sessionPath, telegramDir } from './paths';
+import { FileSession, writePrivateFile } from './session';
 import { createTransport, type TransportFactory } from './transport';
 import { UploadRegistry } from './uploads';
 
@@ -42,9 +39,9 @@ function requireCredentials({ apiId, apiHash }: TelegramCredentials, prefix = ''
 	}
 }
 
-/** The process-wide backend: one index, one MTProto client, one login at a time. */
+/** The process-wide backend: one MTProto client, one login at a time, any number of groups. */
 export class TelegramStorage {
-	readonly files: BackupFiles;
+	readonly groups: Groups;
 	readonly uploads: UploadRegistry;
 	readonly login: LoginFlow;
 
@@ -54,13 +51,13 @@ export class TelegramStorage {
 
 	private constructor(
 		readonly dataRoot: string,
-		readonly db: IndexDb,
-		readonly accessKey: AccessKey,
 		private storedCredentials: TelegramCredentials | null,
 		private readonly transportFactory: TransportFactory
 	) {
-		this.files = new BackupFiles(db, () => this.requireConnection());
-		this.uploads = new UploadRegistry((path, request) => this.files.uploadLocalFile(path, request));
+		this.groups = new Groups(dataRoot, () => this.requireClient());
+		this.uploads = new UploadRegistry((job, request) =>
+			job.group.files.uploadLocalFile(job.path, request)
+		);
 		this.login = new LoginFlow(() => this.requireClient());
 	}
 
@@ -69,23 +66,15 @@ export class TelegramStorage {
 		const { dataRoot } = options;
 		mkdirSync(telegramDir(dataRoot), { recursive: true });
 
-		const db = new IndexDb(indexPath(dataRoot));
-		try {
-			const credentials =
-				(await loadCredentials(dataRoot)) ?? credentialsFromEnv() ?? credentialsFromBuild();
-			const storage = new TelegramStorage(
-				dataRoot,
-				db,
-				AccessKey.loadOrCreate(dataRoot),
-				credentials,
-				options.createTransport ?? createTransport
-			);
-			storage.tryConnect('boot');
-			return storage;
-		} catch (error) {
-			db.close();
-			throw error;
-		}
+		const credentials =
+			(await loadCredentials(dataRoot)) ?? credentialsFromEnv() ?? credentialsFromBuild();
+		const storage = new TelegramStorage(
+			dataRoot,
+			credentials,
+			options.createTransport ?? createTransport
+		);
+		storage.tryConnect('boot');
+		return storage;
 	}
 
 	get current(): Connection | null {
@@ -94,12 +83,6 @@ export class TelegramStorage {
 
 	get credentials(): TelegramCredentials | null {
 		return this.storedCredentials;
-	}
-
-	/** For storage operations: no client means signed out. */
-	requireConnection(): Connection {
-		if (!this.connection) throw StorageError.notAuthenticated();
-		return this.connection;
 	}
 
 	/** For login: no client means no credentials yet. */
@@ -141,7 +124,7 @@ export class TelegramStorage {
 			}
 			await this.disconnect();
 			await this.wipeSession();
-			this.db.clearAll();
+			this.groups.clearIndexes();
 			// So the next login skips the credentials screen.
 			this.tryConnect('logout');
 		});
@@ -180,7 +163,7 @@ export class TelegramStorage {
 			await this.disconnect();
 			if (session !== undefined) {
 				mkdirSync(telegramDir(this.dataRoot), { recursive: true });
-				writeSessionFile(sessionPath(this.dataRoot), JSON.stringify(session));
+				writePrivateFile(sessionPath(this.dataRoot), JSON.stringify(session));
 			}
 			if (credentials) {
 				await saveCredentials(this.dataRoot, credentials);
@@ -193,13 +176,13 @@ export class TelegramStorage {
 	async close(): Promise<void> {
 		await this.connection?.shutdown();
 		this.connection = null;
-		this.db.close();
+		this.groups.close();
 	}
 
 	private connect({ apiId, apiHash }: TelegramCredentials): Connection {
 		const session = FileSession.open(sessionPath(this.dataRoot));
 		const transport = this.transportFactory(session, apiId, apiHash);
-		return new Connection(transport, session, apiId, apiHash, accessGroupFromEnv());
+		return new Connection(transport, session, apiId, apiHash);
 	}
 
 	private tryConnect(when: string): void {

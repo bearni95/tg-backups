@@ -8,12 +8,14 @@ import { isAllowedBackup } from '$utils/telegram/mediaType';
 import { StorageError } from './errors';
 import { guessMime } from './local-paths';
 import { telegramDir } from './paths';
+import type { BackupGroup } from './backup-group';
 import type { TelegramStorage } from './storage';
 import { MAX_UPLOAD_BYTES } from './upload';
 
 /** Stage a multipart upload on disk, then send it to the group. Returns the file id. */
 export async function uploadFromBrowser(
 	storage: TelegramStorage,
+	group: BackupGroup,
 	request: Request
 ): Promise<string> {
 	const form = new MultipartReader(request.body, request.headers.get('content-type'));
@@ -54,7 +56,7 @@ export async function uploadFromBrowser(
 		if (!staged) throw StorageError.badRequest("multipart 'file' field missing");
 		if (name === null) throw StorageError.badRequest('file name missing');
 
-		const result = await storage.files.uploadLocalFile(staged, {
+		const result = await group.files.uploadLocalFile(staged, {
 			name,
 			mimeType: contentType ?? guessMime(name),
 			totalSize: 0,

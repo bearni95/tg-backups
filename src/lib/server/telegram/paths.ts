@@ -13,10 +13,15 @@ export function credentialsPath(dataRoot: string): string {
 	return join(telegramDir(dataRoot), 'credentials.json');
 }
 
-export function indexPath(dataRoot: string): string {
-	return join(telegramDir(dataRoot), 'index.sqlite');
+export function groupsPath(dataRoot: string): string {
+	return join(telegramDir(dataRoot), 'groups.json');
 }
 
-export function accessKeyPath(dataRoot: string): string {
-	return join(telegramDir(dataRoot), 'access_cookie.key');
+export function groupsDir(dataRoot: string): string {
+	return join(telegramDir(dataRoot), 'groups');
+}
+
+/** Per account too: outside channels, message ids are per account. */
+export function groupIndexPath(dataRoot: string, userId: number, groupId: string): string {
+	return join(groupsDir(dataRoot), String(userId), `${groupId}.sqlite`);
 }

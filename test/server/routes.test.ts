@@ -5,9 +5,9 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { InvocationError } from '../../src/lib/server/telegram/invocation-error';
 import { fileNameOf, isUnderDataRoot } from '../../src/lib/server/telegram/local-paths';
-import { indexPath, sessionPath, telegramDir } from '../../src/lib/server/telegram/paths';
+import { groupsDir, sessionPath, telegramDir } from '../../src/lib/server/telegram/paths';
 import type { TelegramStorage } from '../../src/lib/server/telegram/storage';
-import { USER_ID } from './support/fake-telegram';
+import { CHANNEL_ID, USER_ID } from './support/fake-telegram';
 import { call, useBackend } from './support/harness';
 
 const backend = useBackend();
@@ -39,9 +39,9 @@ async function expectError(response: Response, status: number, code: string) {
 }
 
 describe('without credentials', () => {
-	it('boots and creates the index', async () => {
+	it('boots without creating an index', async () => {
 		const storage = await backend.open();
-		expect(existsSync(indexPath(backend.root))).toBe(true);
+		expect(existsSync(groupsDir(backend.root))).toBe(false);
 		expect(storage.uploads.list()).toEqual([]);
 		expect(storage.current).toBeNull();
 	});
@@ -53,12 +53,11 @@ describe('without credentials', () => {
 			connected: false,
 			signedIn: false,
 			authorized: false,
-			accessDenied: false,
-			accessGroupRequired: true,
-			accessGroupInvite: 'https://t.me/+testInviteHash',
 			loginInProgress: null,
 			codeDelivery: null,
-			user: null
+			user: null,
+			groups: [],
+			activeGroupId: null
 		});
 	});
 
@@ -94,7 +93,6 @@ describe('without credentials', () => {
 		expect((await call(storage, 'POST', `${API}/auth/logout`)).status).toBe(200);
 		const cleared = await call(storage, 'DELETE', `${API}/credentials`);
 		expect(await cleared.json()).toEqual({ ok: true });
-		expect((await call(storage, 'POST', `${API}/access/recheck`)).status).toBe(204);
 	});
 
 	it('lists no uploads', async () => {
@@ -307,88 +305,18 @@ describe('login', () => {
 		const storage = await backend.signedIn();
 		await uploaded(storage);
 		storage.current!.session.setHomeDc(2);
+		const { db } = await storage.groups.resolve(null);
 		expect(existsSync(sessionPath(backend.root))).toBe(true);
 		await call(storage, 'POST', `${API}/auth/logout`);
 		expect(existsSync(sessionPath(backend.root))).toBe(false);
-		expect(storage.db.list()).toEqual([]);
 		expect(storage.current).not.toBeNull();
+		expect(db.list()).toEqual([]);
 		expect(backend.telegram.messages).toHaveLength(1);
 	});
 });
 
-describe('the group gate', () => {
-	it('lets a member in and mints a cookie that skips the probe', async () => {
-		const storage = await backend.signedIn();
-		const first = await call(storage, 'GET', `${API}/status`);
-		expect(await first.json()).toMatchObject({
-			signedIn: true,
-			authorized: true,
-			accessDenied: false
-		});
-		const cookie = first.headers.get('set-cookie')!.split(';')[0];
-
-		await storage.close();
-		const restarted = await backend.signedIn();
-		backend.telegram.calls = [];
-		const second = await call(restarted, 'GET', `${API}/status`, { headers: { cookie } });
-		expect((await second.json()).authorized).toBe(true);
-		expect(second.headers.get('set-cookie')).toBeNull();
-		expect(backend.telegram.count('messages.checkChatInvite')).toBe(0);
-	});
-
-	it('caches a denial until re-checked', async () => {
-		backend.telegram.member = false;
-		const storage = await backend.signedIn();
-		const read = async () => (await call(storage, 'GET', `${API}/status`)).json();
-		expect(await read()).toMatchObject({ authorized: false, accessDenied: true });
-		backend.telegram.member = true;
-		expect((await read()).accessDenied).toBe(true);
-		await call(storage, 'POST', `${API}/access/recheck`);
-		expect((await read()).authorized).toBe(true);
-	});
-
-	it('stays closed, not denied, when Telegram cannot say', async () => {
-		backend.telegram.intercept = (request) => {
-			if (request._ === 'messages.checkChatInvite') throw InvocationError.rpc(500, 'INTERNAL');
-		};
-		const status = await (await call(await backend.signedIn(), 'GET', `${API}/status`)).json();
-		expect(status).toMatchObject({ signedIn: true, authorized: false, accessDenied: false });
-	});
-
-	it('is off without a group', async () => {
-		vi.stubEnv('TGB_TELEGRAM_ACCESS_GROUP', '');
-		const status = await (await call(await backend.signedIn(), 'GET', `${API}/status`)).json();
-		expect(status).toMatchObject({
-			authorized: true,
-			accessGroupRequired: false,
-			accessGroupInvite: null
-		});
-	});
-
-	it.each([
-		['+bad', true, false],
-		['@tgb_group', true, true],
-		['@tgb_group', false, false],
-		['@missing', true, false],
-		['-1001234567890', true, true],
-		['-1001234567890', false, false]
-	])('spec %s, member %s: authorized %s', async (spec, member, authorized) => {
-		vi.stubEnv('TGB_TELEGRAM_ACCESS_GROUP', spec);
-		backend.telegram.member = member;
-		backend.telegram.dialogsBefore = 130;
-		const status = await (await call(await backend.signedIn(), 'GET', `${API}/status`)).json();
-		expect(status).toMatchObject({ authorized, accessDenied: !authorized });
-	});
-
-	it.each([true, false])('checks a basic group member (%s)', async (member) => {
-		vi.stubEnv('TGB_TELEGRAM_ACCESS_GROUP', '@tgb_group');
-		backend.telegram.basicGroup = true;
-		backend.telegram.member = member;
-		const status = await (await call(await backend.signedIn(), 'GET', `${API}/status`)).json();
-		expect(status.authorized).toBe(member);
-	});
-
-	it('returns 401 once signed out remotely', async () => {
+describe('signed out remotely', () => {
+	it('returns 401', async () => {
 		backend.telegram.authorized = false;
 		await expectError(
 			await call(await backend.signedIn(), 'GET', `${API}/files`),
@@ -508,7 +436,8 @@ describe('browser uploads and restores', () => {
 
 	it('refuses an incomplete backup', async () => {
 		const storage = await backend.signedIn();
-		storage.db.insert({
+		const { db } = await storage.groups.resolve(null);
+		db.insert({
 			id: 'half',
 			name: 'half.zip',
 			sizeBytes: 10,
@@ -553,7 +482,8 @@ describe('browser uploads and restores', () => {
 	it('wipes everything on delete-all', async () => {
 		const storage = await backend.signedIn();
 		await uploaded(storage);
-		const response = await call(storage, 'POST', `${API}/files/delete-all`);
+		const json = { groupId: `channel-${CHANNEL_ID}` };
+		const response = await call(storage, 'POST', `${API}/files/delete-all`, { json });
 		expect(await response.json()).toEqual({ ok: true, deleted: 1 });
 	});
 });

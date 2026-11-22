@@ -8,7 +8,7 @@ import { BufferSource } from '../../src/lib/server/telegram/byte-source';
 import { PauseControl, AbortControl } from '../../src/lib/server/telegram/controls';
 import { InvocationError } from '../../src/lib/server/telegram/invocation-error';
 import { reconcileIndex, walkAndMint } from '../../src/lib/server/telegram/reconcile';
-import type { TelegramStorage } from '../../src/lib/server/telegram/storage';
+import type { BackupGroup } from '../../src/lib/server/telegram/backup-group';
 import { MAX_CHUNK_BYTES, PART_BYTES } from '../../src/lib/server/telegram/upload';
 import type { UploadRequest } from '../../src/lib/server/telegram/upload';
 import { useBackend } from './support/harness';
@@ -26,14 +26,14 @@ function pattern(size: number, seed = 1): Buffer {
 	return Buffer.alloc(size, block);
 }
 
-function upload(storage: TelegramStorage, bytes: Buffer, change: Partial<UploadRequest> = {}) {
+function upload(storage: BackupGroup, bytes: Buffer, change: Partial<UploadRequest> = {}) {
 	return storage.files.uploadSource(
 		{ name: 'db.zip', mimeType: 'application/zip', totalSize: bytes.length, ...change },
 		new BufferSource(bytes)
 	);
 }
 
-async function restore(storage: TelegramStorage, id: string, start?: number, end?: number) {
+async function restore(storage: BackupGroup, id: string, start?: number, end?: number) {
 	const stream =
 		start === undefined
 			? await storage.files.download(id)
@@ -52,7 +52,7 @@ function expectSameBytes(actual: Buffer, expected: Buffer) {
 async function otherMachine() {
 	const root = join(backend.root, 'other-machine');
 	mkdirSync(root, { recursive: true });
-	return backend.signedIn(root);
+	return backend.group(root);
 }
 
 function chunkCaption(index: number, total: number, size: number, metadata?: unknown) {
@@ -72,7 +72,7 @@ function chunkCaption(index: number, total: number, size: number, metadata?: unk
 
 describe('upload and restore', () => {
 	it.each([0, 1, PART_BYTES, PART_BYTES + 1, 3 * MIB + 7])('round-trips %i bytes', async (size) => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		const bytes = pattern(size);
 		const result = await upload(storage, bytes);
 
@@ -87,7 +87,7 @@ describe('upload and restore', () => {
 	});
 
 	it('uses the big-file method above 10 MiB', LONG, async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		const bytes = pattern(10 * MIB + 1);
 		const { id } = await upload(storage, bytes);
 		expect(backend.telegram.count('upload.saveFilePart')).toBe(0);
@@ -99,7 +99,7 @@ describe('upload and restore', () => {
 	});
 
 	it('splits at 50 MiB and restores across the seam', LONG, async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		const bytes = pattern(MAX_CHUNK_BYTES + 3);
 		const progress: number[] = [];
 		const { id } = await upload(storage, bytes, {
@@ -121,7 +121,7 @@ describe('upload and restore', () => {
 	});
 
 	it('restores unaligned ranges', async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		const bytes = pattern(2 * MIB + 100);
 		const { id } = await upload(storage, bytes);
 		for (const [start, end] of [
@@ -136,7 +136,7 @@ describe('upload and restore', () => {
 	});
 
 	it('never flies more than 8 parts at once', async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		let active = 0;
 		let most = 0;
 		backend.telegram.intercept = async (request) => {
@@ -150,7 +150,7 @@ describe('upload and restore', () => {
 	});
 
 	it('captions every chunk with the marker', async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		const bytes = pattern(10);
 		await upload(storage, bytes, { metadata: { z: 1, a: 2 }, text: 'note' });
 		const [caption] = backend.telegram.captions();
@@ -167,7 +167,7 @@ describe('upload and restore', () => {
 	});
 
 	it('keeps versions with the same name and size apart', async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		const monday = await upload(storage, Buffer.from('monday'));
 		const friday = await upload(storage, Buffer.from('friday'));
 		expect(monday.id).not.toBe(friday.id);
@@ -176,7 +176,7 @@ describe('upload and restore', () => {
 	});
 
 	it('removes what landed when the zip changed mid-upload', async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		const bytes = pattern(100);
 		backend.telegram.intercept = () => undefined;
 		const source = new BufferSource(bytes);
@@ -198,7 +198,7 @@ describe('upload and restore', () => {
 	});
 
 	it('retries a transient part failure', async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		let failed = false;
 		backend.telegram.intercept = (request) => {
 			if (request._ === 'upload.saveFilePart' && !failed) {
@@ -212,7 +212,7 @@ describe('upload and restore', () => {
 	});
 
 	it('fails fast on a permanent part failure', async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		backend.telegram.intercept = (request) => {
 			if (request._ === 'upload.saveFilePart') throw InvocationError.rpc(400, 'FILE_PART_TOO_BIG');
 		};
@@ -222,7 +222,7 @@ describe('upload and restore', () => {
 	});
 
 	it('never records a chunk without its message id', async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		const handle = backend.telegram.handle.bind(backend.telegram);
 		backend.telegram.handle = async (request, options) => {
 			const response = await handle(request, options);
@@ -233,7 +233,7 @@ describe('upload and restore', () => {
 	});
 
 	it('falls back to the main connection', async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		backend.telegram.intercept = (request) => {
 			if (request._ === 'help.getConfig') throw InvocationError.transport('refused');
 		};
@@ -244,7 +244,7 @@ describe('upload and restore', () => {
 	});
 
 	it('cancels, also while paused', async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		const pause = new PauseControl();
 		const abort = new AbortControl();
 		pause.pause();
@@ -257,41 +257,38 @@ describe('upload and restore', () => {
 		expect(backend.telegram.messages).toEqual([]);
 	});
 
-	it('refuses anything but a zip before connecting', async () => {
-		const storage = await backend.open();
+	it('refuses anything but a zip before uploading', async () => {
+		const storage = await backend.group();
 		await expect(
 			upload(storage, Buffer.alloc(0), { name: 'cover.jpg', mimeType: 'image/jpeg' })
 		).rejects.toMatchObject({ code: 'unsupported_media_type' });
+		expect(backend.telegram.count('help.getConfig')).toBe(0);
 	});
 
 	it('refuses a directory', async () => {
-		const storage = await backend.open();
+		const storage = await backend.group();
 		const request = { name: 'db.zip', mimeType: 'application/zip', totalSize: 0 };
 		await expect(storage.files.uploadLocalFile(backend.root, request)).rejects.toMatchObject({
 			code: 'bad_request'
 		});
 	});
 
-	it('needs the group: there is no fallback', async () => {
-		vi.stubEnv('TGB_TELEGRAM_ACCESS_GROUP', '');
-		const storage = await backend.signedIn();
-		await expect(upload(storage, pattern(10))).rejects.toThrow(
-			'TGB_TELEGRAM_ACCESS_GROUP is not set'
-		);
+	it('needs a group: there is no fallback', async () => {
+		const storage = await backend.withoutGroup();
+		await expect(storage.groups.resolve(null)).rejects.toMatchObject({ code: 'group_required' });
 		expect(backend.telegram.count('messages.sendMedia')).toBe(0);
 	});
 
 	it('fails closed for a non-member', async () => {
 		backend.telegram.member = false;
-		const storage = await backend.signedIn();
-		await expect(upload(storage, pattern(10))).rejects.toThrow('could not be resolved');
+		await expect(backend.group()).rejects.toMatchObject({ code: 'group_unavailable' });
 		expect(backend.telegram.count('messages.sendMedia')).toBe(0);
 	});
 });
 
 describe('resume', () => {
 	it('seeks past landed chunks', LONG, async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		const bytes = pattern(MAX_CHUNK_BYTES + 3);
 		backend.telegram.intercept = (request) => {
 			if (request._ === 'upload.saveFilePart') throw InvocationError.rpc(400, 'FILE_PART_INVALID');
@@ -318,7 +315,7 @@ describe('resume', () => {
 	});
 
 	it('pushes a stale wrong-size chunk again', async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		const bytes = pattern(1000);
 		const name = `db.tgb-${sha256(bytes).slice(0, 12)}.zip`;
 		storage.db.insert({
@@ -345,7 +342,7 @@ describe('resume', () => {
 	});
 
 	it('deduplicates by content', async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		const path = join(backend.root, 'db.zip');
 		writeFileSync(path, pattern(200));
 		const request = { name: 'db.zip', mimeType: 'application/zip', totalSize: 0 };
@@ -357,7 +354,7 @@ describe('resume', () => {
 
 describe('restore safety', () => {
 	it('checks every chunk first, 100 ids at a time', async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		storage.db.insert({
 			id: 'many',
 			name: 'many.zip',
@@ -381,14 +378,14 @@ describe('restore safety', () => {
 	});
 
 	it('is a 404 when a message was deleted', async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		const { id, tgMessageId } = await upload(storage, pattern(10));
 		backend.telegram.remove(tgMessageId);
 		await expect(storage.files.download(id)).rejects.toMatchObject({ code: 'not_found' });
 	});
 
 	it('errors instead of ending short', async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		const tgMessageId = backend.telegram.addDocument('short.zip', pattern(5));
 		storage.db.insert({
 			id: 'short',
@@ -405,7 +402,7 @@ describe('restore safety', () => {
 	});
 
 	it('follows FILE_MIGRATE', async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		const bytes = pattern(50);
 		const { id } = await upload(storage, bytes);
 		backend.telegram.intercept = (request, options) => {
@@ -416,14 +413,14 @@ describe('restore safety', () => {
 	});
 
 	it('catches a checksum mismatch', async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		const { id } = await upload(storage, pattern(10));
 		storage.db.setChecksum(id, 'wrong');
 		await expect(storage.files.verify(id)).rejects.toMatchObject({ code: 'checksum_mismatch' });
 	});
 
 	it('restores into a directory', async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		const bytes = pattern(1000);
 		const { id } = await upload(storage, bytes);
 		const target = await storage.files.downloadToDir(id, join(backend.root, 'restored'));
@@ -431,7 +428,7 @@ describe('restore safety', () => {
 	});
 
 	it("won't write outside that directory", async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		storage.db.insert({
 			id: 'evil',
 			name: '../evil.zip',
@@ -450,12 +447,12 @@ describe('restore safety', () => {
 
 describe('rebuilding the index', () => {
 	it('finds backups from another machine', async () => {
-		const first = await backend.signedIn();
+		const first = await backend.group();
 		const bytes = pattern(1234);
 		await upload(first, bytes, { text: 'note', metadata: { k: 'v' } });
 
 		const second = await otherMachine();
-		expect(await reconcileIndex(second.current!, second.db)).toBe(1);
+		expect(await reconcileIndex(second)).toBe(1);
 		const [row] = second.db.list();
 		expect(row).toMatchObject({ text: 'note', metadata: '{"k":"v"}', checksumSha256: null });
 		expectSameBytes(await restore(second, row.id), bytes);
@@ -464,29 +461,29 @@ describe('rebuilding the index', () => {
 	it('fuses chunks tagged by different attempts', async () => {
 		backend.telegram.addDocument('p2', pattern(4), { caption: chunkCaption(1, 2, 10) });
 		backend.telegram.addDocument('p1', pattern(6), { caption: chunkCaption(0, 2, 10) });
-		const storage = await backend.signedIn();
-		expect(await reconcileIndex(storage.current!, storage.db)).toBe(1);
+		const storage = await backend.group();
+		expect(await reconcileIndex(storage)).toBe(1);
 		expect(storage.db.list()[0].sizeBytes).toBe(10);
 	});
 
 	it('accumulates across walks, then clears staging', async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		const first = backend.telegram.addDocument('p1', pattern(6), {
 			caption: chunkCaption(0, 2, 10)
 		});
-		expect(await walkAndMint(storage.current!, storage.db, { kind: 'all' })).toEqual([]);
+		expect(await walkAndMint(storage, { kind: 'all' })).toEqual([]);
 		expect(storage.db.loadPendingChunks()).toHaveLength(1);
 
 		backend.telegram.remove(first);
 		backend.telegram.addDocument('p2', pattern(4), { caption: chunkCaption(1, 2, 10) });
-		expect(await walkAndMint(storage.current!, storage.db, { kind: 'all' })).toHaveLength(1);
+		expect(await walkAndMint(storage, { kind: 'all' })).toHaveLength(1);
 		expect(storage.db.loadPendingChunks()).toEqual([]);
 	});
 
 	it('keeps a healthy row', async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		const { id } = await upload(storage, pattern(10));
-		expect(await walkAndMint(storage.current!, storage.db, { kind: 'all' })).toEqual([]);
+		expect(await walkAndMint(storage, { kind: 'all' })).toEqual([]);
 		expect(storage.db.list().map((row) => row.id)).toEqual([id]);
 	});
 
@@ -494,28 +491,28 @@ describe('rebuilding the index', () => {
 		backend.telegram.addDocument('manual.zip', pattern(3));
 		backend.telegram.addDocument('photo.jpg', pattern(3), { mimeType: 'image/jpeg' });
 		backend.telegram.addText('hello');
-		const storage = await backend.signedIn();
-		expect(await reconcileIndex(storage.current!, storage.db)).toBe(1);
+		const storage = await backend.group();
+		expect(await reconcileIndex(storage)).toBe(1);
 		expect(storage.db.list()[0].name).toBe('manual.zip');
-		expect(await walkAndMint(storage.current!, storage.db, { kind: 'all' })).toEqual([]);
+		expect(await walkAndMint(storage, { kind: 'all' })).toEqual([]);
 	});
 
 	it('pages through a long history', async () => {
 		backend.telegram.addDocument('oldest.zip', pattern(3));
 		for (let i = 0; i < 350; i++) backend.telegram.addText();
-		const storage = await backend.signedIn();
-		expect(await reconcileIndex(storage.current!, storage.db)).toBe(1);
+		const storage = await backend.group();
+		expect(await reconcileIndex(storage)).toBe(1);
 		expect(backend.telegram.count('messages.getHistory')).toBeGreaterThanOrEqual(4);
 	});
 
 	it('walks once per connection, again after a restart', async () => {
 		const storage = await backend.signedIn();
-		await reconcileIndex(storage.current!, storage.db);
-		await reconcileIndex(storage.current!, storage.db);
+		const group = await storage.groups.resolve(null);
+		await reconcileIndex(group);
+		await reconcileIndex(group);
 		expect(backend.telegram.count('messages.getHistory')).toBe(1);
 		await storage.close();
-		const restarted = await backend.signedIn();
-		await reconcileIndex(restarted.current!, restarted.db);
+		await reconcileIndex(await backend.group());
 		expect(backend.telegram.count('messages.getHistory')).toBe(2);
 	});
 
@@ -523,20 +520,16 @@ describe('rebuilding the index', () => {
 		backend.telegram.addDocument('p', pattern(4), {
 			caption: chunkCaption(0, 1, 4, { pipelineId: 'p', role: 'media' })
 		});
-		const storage = await backend.signedIn();
-		expect(await walkAndMint(storage.current!, storage.db, { kind: 'metadata' })).toEqual([]);
-		expect(await walkAndMint(storage.current!, storage.db, { kind: 'pipeline', id: 'q' })).toEqual(
-			[]
-		);
-		expect(
-			await walkAndMint(storage.current!, storage.db, { kind: 'pipeline', id: 'p' })
-		).toHaveLength(1);
+		const storage = await backend.group();
+		expect(await walkAndMint(storage, { kind: 'metadata' })).toEqual([]);
+		expect(await walkAndMint(storage, { kind: 'pipeline', id: 'q' })).toEqual([]);
+		expect(await walkAndMint(storage, { kind: 'pipeline', id: 'p' })).toHaveLength(1);
 	});
 });
 
 describe('deleting', () => {
 	it('removes messages, rows and staging', async () => {
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		const { id } = await upload(storage, pattern(10));
 		const { name } = storage.db.get(id)!;
 		storage.db.upsertPendingPart({
@@ -563,7 +556,7 @@ describe('deleting', () => {
 
 	it('wipes the group in batches of 100', async () => {
 		for (let i = 0; i < 250; i++) backend.telegram.addText();
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		expect(await storage.files.deleteAll()).toBe(250);
 		expect(backend.telegram.messages).toEqual([]);
 		expect(backend.telegram.requests('channels.deleteMessages').map((r) => r.id.length)).toEqual([
@@ -573,7 +566,7 @@ describe('deleting', () => {
 
 	it('works in a basic group', async () => {
 		backend.telegram.basicGroup = true;
-		const storage = await backend.signedIn();
+		const storage = await backend.group();
 		const bytes = pattern(10);
 		const { id } = await upload(storage, bytes);
 		expectSameBytes(await restore(storage, id), bytes);
@@ -581,12 +574,18 @@ describe('deleting', () => {
 		expect(backend.telegram.count('messages.deleteMessages')).toBe(1);
 	});
 
-	it('fails clearly without a client', async () => {
-		const storage = await backend.open();
-		await expect(storage.files.deleteAll()).rejects.toMatchObject({ code: 'not_authenticated' });
+	it('fails clearly for what is not there', async () => {
+		const storage = await backend.group();
 		await expect(storage.files.delete('missing')).rejects.toMatchObject({ code: 'not_found' });
 		await expect(storage.files.download('missing')).rejects.toMatchObject({ code: 'not_found' });
 		await expect(storage.files.verify('missing')).rejects.toMatchObject({ code: 'not_found' });
 		expect(storage.db.list()).toEqual([]);
+	});
+
+	it('fails clearly without a client', async () => {
+		const storage = await backend.open();
+		await expect(storage.groups.resolve(null)).rejects.toMatchObject({
+			code: 'credentials_missing'
+		});
 	});
 });

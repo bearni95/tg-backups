@@ -10,8 +10,7 @@ import { isAllowedBackup } from '$utils/telegram/mediaType';
 import type { FileRow } from '$types/telegram-server.type';
 import { contentSha256 } from './backup';
 import { FileSource, type ByteSource } from './byte-source';
-import type { Connection } from './connection';
-import type { IndexDb } from './db';
+import type { BackupGroup } from './backup-group';
 import * as download from './download';
 import { StorageError } from './errors';
 import { reconcileIndex } from './reconcile';
@@ -22,10 +21,7 @@ export type UploadOutcome =
 
 /** The group as a file store. The HTTP routes are thin wrappers over this. */
 export class BackupFiles {
-	constructor(
-		private readonly db: IndexDb,
-		private readonly connection: () => Connection
-	) {}
+	constructor(private readonly group: BackupGroup) {}
 
 	/**
 	 * Every upload goes through here: it hashes the content into the stored name,
@@ -35,10 +31,9 @@ export class BackupFiles {
 		if (!isAllowedBackup(request.name, request.mimeType)) {
 			throw StorageError.unsupportedMediaType(request.name, request.mimeType);
 		}
-		const connection = this.connection();
 		const digest = await contentSha256(source, request.totalSize, request.abort);
 		const named = { ...request, name: storedName(request.name, digest) };
-		const result = await upload(connection, this.db, named, source);
+		const result = await upload(this.group, named, source);
 
 		if (result.sha256 !== null && result.sha256 !== digest) {
 			// The zip was still being written: what landed isn't what was hashed.
@@ -64,7 +59,7 @@ export class BackupFiles {
 
 	/** Skips the upload when this exact content is already in the group. */
 	async uploadLocalFileDedup(path: string, request: UploadRequest): Promise<UploadOutcome> {
-		await reconcileIndex(this.connection(), this.db);
+		await reconcileIndex(this.group);
 
 		const handle = await open(path, 'r');
 		let digest: string;
@@ -75,14 +70,14 @@ export class BackupFiles {
 			await handle.close();
 		}
 
-		const existing = this.db.findByName(storedName(request.name, digest));
+		const existing = this.group.db.findByName(storedName(request.name, digest));
 		if (existing) return { kind: 'alreadyExists', row: existing };
 		return { kind: 'uploaded', result: await this.uploadLocalFile(path, request) };
 	}
 
 	async downloadRange(id: string, start: number, end: number) {
 		const row = this.require(id);
-		return download.downloadRange(this.connection(), this.db, row, start, end);
+		return download.downloadRange(this.group, row, start, end);
 	}
 
 	async download(id: string) {
@@ -118,19 +113,19 @@ export class BackupFiles {
 
 	async delete(id: string): Promise<void> {
 		const row = this.require(id);
-		await download.deleteFile(this.connection(), this.db, row);
+		await download.deleteFile(this.group, row);
 	}
 
 	async deleteIfExists(id: string): Promise<void> {
-		if (this.db.get(id)) await this.delete(id);
+		if (this.group.db.get(id)) await this.delete(id);
 	}
 
 	async deleteAll(): Promise<number> {
-		return download.deleteAll(this.connection(), this.db);
+		return download.deleteAll(this.group);
 	}
 
 	private require(id: string): FileRow {
-		const row = this.db.get(id);
+		const row = this.group.db.get(id);
 		if (!row) throw StorageError.notFound();
 		return row;
 	}

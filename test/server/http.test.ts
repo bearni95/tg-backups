@@ -201,7 +201,8 @@ describe('node server', () => {
 	it('breaks the connection on a short restore', async () => {
 		const storage = await backend.signedIn();
 		const tgMessageId = backend.telegram.addDocument('short.zip', Buffer.alloc(5));
-		storage.db.insert({
+		const { db } = await storage.groups.resolve(null);
+		db.insert({
 			id: 'short',
 			name: 'short.zip',
 			sizeBytes: 10,
@@ -211,7 +212,7 @@ describe('node server', () => {
 			checksumSha256: null,
 			metadata: null
 		});
-		storage.db.insertPart('short', { ord: 0, tgMessageId, sizeBytes: 10, checksumSha256: null });
+		db.insertPart('short', { ord: 0, tgMessageId, sizeBytes: 10, checksumSha256: null });
 		const port = await serve(storage);
 		await expect(
 			fetch(`http://127.0.0.1:${port}/api/telegram/files/short`).then((response) =>

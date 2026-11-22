@@ -1,5 +1,6 @@
 import type { RequestEvent } from '@sveltejs/kit';
 import { describeError, log } from '$lib/server/logger';
+import type { BackupGroup } from '$lib/server/telegram/backup-group';
 import { StorageError } from '$lib/server/telegram/errors';
 import type { TelegramStorage } from '$lib/server/telegram/storage';
 
@@ -49,5 +50,22 @@ export function authorizedRoute<Event extends RequestEvent>(
 	return telegramRoute<Event>(async (storage, event) => {
 		await storage.requireAuthorized();
 		return handler(storage, event);
+	});
+}
+
+/**
+ * A route working on one group. Callers name it with `?group=`, so a tab left
+ * open on another group can't act on the wrong one.
+ */
+export function groupRoute<Event extends RequestEvent>(
+	handler: (
+		group: BackupGroup,
+		event: Event,
+		storage: TelegramStorage
+	) => Response | Promise<Response>
+): (event: Event) => Promise<Response> {
+	return authorizedRoute<Event>(async (storage, event) => {
+		const group = await storage.groups.resolve(event.url.searchParams.get('group'));
+		return handler(group, event, storage);
 	});
 }

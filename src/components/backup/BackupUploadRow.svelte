@@ -20,7 +20,10 @@
 <div class="card bg-base-200 shadow-sm">
 	<div class="card-body gap-2 p-4">
 		<div class="flex items-center justify-between gap-2">
-			<span class="min-w-0 truncate font-medium" title={upload.name}>{upload.name}</span>
+			<div class="flex min-w-0 flex-col">
+				<span class="truncate font-medium" title={upload.name}>{upload.name}</span>
+				<span class="truncate text-xs opacity-60">to {upload.groupTitle}</span>
+			</div>
 			<span class="badge badge-ghost">{upload.status}</span>
 		</div>
 		<TelegramUploadProgress uploads={[upload]} />

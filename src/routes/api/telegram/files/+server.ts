@@ -1,13 +1,13 @@
-import { authorizedRoute, jsonResponse } from '$lib/server/http/api';
+import { groupRoute, jsonResponse } from '$lib/server/http/api';
 import { uploadFromBrowser } from '$lib/server/telegram/browser-upload';
 import { listFiles, uploadedEntry } from '$lib/server/telegram/catalog';
 import type { RequestHandler } from './$types';
 
-export const GET: RequestHandler = authorizedRoute(async (storage, { url }) =>
-	jsonResponse({ files: await listFiles(storage, url.searchParams.get('scope')) })
+export const GET: RequestHandler = groupRoute(async (group, { url }) =>
+	jsonResponse({ files: await listFiles(group, url.searchParams.get('scope')) })
 );
 
-export const POST: RequestHandler = authorizedRoute(async (storage, { request }) => {
-	const id = await uploadFromBrowser(storage, request);
-	return jsonResponse(uploadedEntry(storage, id));
+export const POST: RequestHandler = groupRoute(async (group, { request }, storage) => {
+	const id = await uploadFromBrowser(storage, group, request);
+	return jsonResponse(uploadedEntry(group, id));
 });

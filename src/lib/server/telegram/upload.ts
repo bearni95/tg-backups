@@ -16,7 +16,7 @@ import type { ByteSource } from './byte-source';
 import { randomLong, sendDocument } from './chat';
 import type { Connection } from './connection';
 import { checkAbort, waitWhilePaused, type AbortControl, type PauseControl } from './controls';
-import type { IndexDb } from './db';
+import type { BackupGroup } from './backup-group';
 import { StorageError } from './errors';
 import { isTransient } from './invocation-error';
 
@@ -115,15 +115,13 @@ interface Attempt {
 }
 
 export async function upload(
-	connection: Connection,
-	db: IndexDb,
+	{ connection, db, peer: target }: BackupGroup,
 	request: UploadRequest,
 	source: ByteSource
 ): Promise<UploadResult> {
 	const { name, totalSize, abort } = request;
 	if (totalSize > MAX_UPLOAD_BYTES) throw StorageError.fileTooLarge(MAX_UPLOAD_BYTES);
 
-	const target = await connection.targetPeer();
 	const attempt: Attempt = {
 		connection,
 		target,

@@ -5,6 +5,8 @@ import type {
 	TelegramAuthOutcome,
 	TelegramCredentials,
 	TelegramFile,
+	TelegramGroup,
+	TelegramGroupInfo,
 	TelegramQrPending,
 	TelegramStatus,
 	TelegramUploadSnapshot
@@ -20,11 +22,9 @@ const STATUS_POLL_MS = 5000;
 const UPLOADS_POLL_MS = 1000;
 const QR_POLL_MS = 3000;
 
-// Mirrors the backend bypass-cookie lifetime (`TTL_SECONDS` in access-cookie.ts).
-// We persist a local "authorized until" hint so a reload within the window
-// opens the UI instantly instead of flashing the gate while the first
-// cookie-backed /status poll round-trips. The backend cookie remains the
-// real bypass — this is purely a pre-first-poll rendering optimisation.
+// A local "authorized until" hint, so a reload within the window opens the UI
+// instantly instead of flashing the gate while the first /status round-trips.
+// Purely a rendering optimisation: the status is what decides.
 const AUTH_HINT_KEY = 'telegram:authorized-until';
 const AUTH_HINT_TTL_MS = 60 * 60 * 1000;
 
@@ -42,6 +42,15 @@ class TelegramService {
 	/// The QR currently shown for QR-code login; `null` when QR login isn't running.
 	qrLogin: Writable<TelegramQrPending | null> = writable(null);
 
+	groupInfo: Writable<TelegramGroupInfo | null> = writable(null);
+	/// The groups "use an existing group" offers; `null` until loaded.
+	availableGroups: Writable<TelegramGroup[] | null> = writable(null);
+	loadingGroups: Writable<boolean> = writable(false);
+
+	// Responses can arrive out of order, and a late one mustn't show another group's data.
+	private statusSeq = 0;
+	private appliedStatusSeq = 0;
+	private filesSeq = 0;
 	private authorizedUntil = localStorageWritableStore<number>(AUTH_HINT_KEY, 0);
 	private qrTimer: ReturnType<typeof setTimeout> | null = null;
 	private qrActive = false;
@@ -80,8 +89,16 @@ class TelegramService {
 
 	async refreshStatus(): Promise<void> {
 		this.loadingStatus.set(true);
+		const seq = ++this.statusSeq;
 		try {
 			const data = await telegramSource.getStatus();
+			if (seq < this.appliedStatusSeq) return;
+			this.appliedStatusSeq = seq;
+			const previous = get(this.status);
+			if ((previous?.activeGroupId ?? null) !== (data?.activeGroupId ?? null)) {
+				this.clearGroupView();
+			}
+			if (previous?.authorized && !data?.authorized) this.availableGroups.set(null);
 			this.status.set(data);
 			// Refresh (or clear) the local hint for the *next* page load. The
 			// in-session gate is driven by `status.authorized` directly.
@@ -199,26 +216,46 @@ class TelegramService {
 	async logout(): Promise<void> {
 		await telegramSource.logout();
 		this.files.set([]);
+		this.availableGroups.set(null);
 		await this.refreshStatus();
 	}
 
-	/// Forget the backend's cached group-membership verdict and re-probe.
-	/// Backs the "not a member" screen's re-check button after an admin adds
-	/// the signed-in account to the required group.
-	async recheckAccess(): Promise<void> {
-		await telegramSource.recheckAccess();
-		await this.refreshStatus();
+	/// Create a Telegram group on the signed-in account and switch to it.
+	async createGroup(title: string): Promise<void> {
+		const group = await telegramSource.createGroup(title);
+		await this.showGroup(group);
 	}
 
-	async refreshFiles(): Promise<void> {
-		this.loadingFiles.set(true);
+	/// Switch to a group: one already in use, or one from `availableGroups`.
+	async selectGroup(id: string): Promise<void> {
+		const group = await telegramSource.selectGroup(id);
+		await this.showGroup(group);
+	}
+
+	async loadAvailableGroups(): Promise<void> {
+		this.loadingGroups.set(true);
 		try {
-			this.files.set(await telegramSource.listFiles());
+			this.availableGroups.set(await telegramSource.listAvailableGroups());
 		} catch (err) {
 			this.handleError(err);
 		} finally {
-			this.loadingFiles.set(false);
+			this.loadingGroups.set(false);
 		}
+	}
+
+	async refreshGroupInfo(): Promise<void> {
+		const groupId = this.activeGroupId();
+		if (!groupId) return;
+		try {
+			const info = await telegramSource.getGroupInfo(groupId);
+			if (this.activeGroupId() === groupId) this.groupInfo.set(info);
+		} catch (err) {
+			if (this.activeGroupId() === groupId) this.handleError(err);
+		}
+	}
+
+	async refreshFiles(): Promise<void> {
+		await this.loadFiles((groupId) => telegramSource.listFiles(groupId));
 	}
 
 	/// Catalog fast path: lists only the pipeline metadata sidecar rows
@@ -227,14 +264,7 @@ class TelegramService {
 	/// media chunk — pair with `loadMediaForPipeline` to mint media rows
 	/// on demand when the user hits play.
 	async scanMetadata(): Promise<void> {
-		this.loadingFiles.set(true);
-		try {
-			this.files.set(await telegramSource.scanMetadata());
-		} catch (err) {
-			this.handleError(err);
-		} finally {
-			this.loadingFiles.set(false);
-		}
+		await this.loadFiles((groupId) => telegramSource.scanMetadata(groupId));
 	}
 
 	/// Mint (if needed) and return the media row paired with this
@@ -254,9 +284,10 @@ class TelegramService {
 	async loadMediaForPipeline(pipelineId: string): Promise<TelegramFile> {
 		const RETRIES = 12; // ~30 s total at 2.5 s per try
 		const DELAY_MS = 2_500;
+		const groupId = this.requireGroupId();
 		for (let attempt = 0; attempt < RETRIES; attempt += 1) {
 			try {
-				return await telegramSource.loadMediaForPipeline(pipelineId);
+				return await telegramSource.loadMediaForPipeline(pipelineId, groupId);
 			} catch (err) {
 				const isLastAttempt = attempt === RETRIES - 1;
 				if (err instanceof TelegramApiError && err.status === 404 && !isLastAttempt) {
@@ -274,22 +305,22 @@ class TelegramService {
 	}
 
 	async uploadFile(file: File): Promise<void> {
-		await telegramSource.uploadFile(file);
+		await telegramSource.uploadFile(file, this.requireGroupId());
 		await this.refreshFiles();
 	}
 
 	async deleteFile(id: string): Promise<void> {
-		await telegramSource.deleteFile(id);
+		await telegramSource.deleteFile(id, this.requireGroupId());
 		await this.refreshFiles();
 	}
 
 	async deleteAllFiles(): Promise<void> {
-		await telegramSource.deleteAllFiles();
+		await telegramSource.deleteAllFiles(this.requireGroupId());
 		await this.refreshFiles();
 	}
 
-	downloadUrl(id: string): string {
-		return telegramSource.downloadUrl(id);
+	downloadUrl(id: string, groupId: string): string {
+		return telegramSource.downloadUrl(id, groupId);
 	}
 
 	async startUpload(input: {
@@ -299,7 +330,7 @@ class TelegramService {
 		metadata?: unknown;
 		refId?: string;
 	}): Promise<TelegramUploadSnapshot> {
-		const snapshot = await telegramSource.startUpload(input);
+		const snapshot = await telegramSource.startUpload(input, this.requireGroupId());
 		await this.refreshUploads();
 		return snapshot;
 	}
@@ -350,6 +381,53 @@ class TelegramService {
 				this.uploadsPollTimer = null;
 			}
 		};
+	}
+
+	private activeGroupId(): string | null {
+		return get(this.status)?.activeGroupId ?? null;
+	}
+
+	private requireGroupId(): string {
+		const groupId = this.activeGroupId();
+		if (!groupId) throw new Error('Create or choose a backup group first.');
+		return groupId;
+	}
+
+	private async loadFiles(load: (groupId: string) => Promise<TelegramFile[]>): Promise<void> {
+		const groupId = this.activeGroupId();
+		if (!groupId) return;
+		const seq = ++this.filesSeq;
+		this.loadingFiles.set(true);
+		try {
+			const files = await load(groupId);
+			if (seq === this.filesSeq && this.activeGroupId() === groupId) this.files.set(files);
+		} catch (err) {
+			if (seq === this.filesSeq) this.handleError(err);
+		} finally {
+			if (seq === this.filesSeq) this.loadingFiles.set(false);
+		}
+	}
+
+	private clearGroupView(): void {
+		this.filesSeq += 1;
+		this.files.set([]);
+		this.groupInfo.set(null);
+		this.loadingFiles.set(false);
+	}
+
+	private async showGroup(group: TelegramGroup): Promise<void> {
+		// Any status still in flight predates the switch.
+		this.appliedStatusSeq = ++this.statusSeq;
+		const status = get(this.status);
+		if (status) {
+			if (status.activeGroupId !== group.id) this.clearGroupView();
+			const known = status.groups.some((existing) => existing.id === group.id);
+			const groups = known
+				? status.groups.map((existing) => (existing.id === group.id ? group : existing))
+				: [...status.groups, group];
+			this.status.set({ ...status, groups, activeGroupId: group.id });
+		}
+		await this.refreshStatus();
 	}
 
 	private handleError(err: unknown): void {

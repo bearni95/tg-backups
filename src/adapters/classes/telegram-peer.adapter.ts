@@ -42,20 +42,6 @@ export class TelegramPeerAdapter extends AdapterClass {
 		}
 	}
 
-	/** Like {@link fromPeer}, but null when the response didn't make the peer addressable. */
-	fromResolved(peer: tl.TypePeer, users: tl.TypeUser[], chats: tl.TypeChat[]): PeerRef | null {
-		if (peer._ === 'peerChat') return this.fromPeer(peer, users, chats);
-		const found =
-			peer._ === 'peerUser'
-				? users.find((user) => user.id === peer.userId)
-				: chats.find((chat) => chat.id === peer.channelId);
-		if (!found) return null;
-		const addressable =
-			found._ === 'channelForbidden' ||
-			((found._ === 'user' || found._ === 'channel') && !found.min && !!found.accessHash);
-		return addressable ? this.fromPeer(peer, users, chats) : null;
-	}
-
 	toInputPeer({ kind, id, accessHash }: PeerRef): tl.TypeInputPeer {
 		switch (kind) {
 			case 'user':

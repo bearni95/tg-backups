@@ -7,6 +7,26 @@ export interface PeerRef {
 	accessHash: Long;
 }
 
+/** A group as `groups.json` keeps it. The hash is an i64 in decimal, valid for one account. */
+export interface SavedGroup {
+	id: string;
+	title: string;
+	accessHash: string;
+}
+
+export interface AccountGroups {
+	activeGroupId: string | null;
+	groups: SavedGroup[];
+}
+
+/** A group as Telegram reports it now. */
+export interface GroupDetails {
+	title: string;
+	invite: string | null;
+	autoDeleteSeconds: number | null;
+	historyHidden: boolean;
+}
+
 /** A row of `tg_files`: one logical backup. */
 export interface FileRow {
 	id: string;

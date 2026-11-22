@@ -14,6 +14,9 @@ const STATUS = {
 	bad_request: 400,
 	not_found: 404,
 	backup_incomplete: 409,
+	group_required: 409,
+	group_unavailable: 409,
+	group_not_found: 404,
 	upload_aborted: 409,
 	file_too_large: 413,
 	unsupported_media_type: 415,
@@ -104,6 +107,21 @@ export class StorageError extends Error {
 
 	static notFound() {
 		return new StorageError('not_found', 'file not found');
+	}
+
+	static groupRequired() {
+		return new StorageError('group_required', 'create or choose a backup group first');
+	}
+
+	static groupNotFound() {
+		return new StorageError('group_not_found', 'group not found for this account');
+	}
+
+	static groupUnavailable() {
+		return new StorageError(
+			'group_unavailable',
+			'this account no longer has access to that group; choose or create another'
+		);
 	}
 
 	static checksumMismatch(expected: string, actual: string) {

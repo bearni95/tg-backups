@@ -31,6 +31,13 @@ const errBadJson = (status: number) => ({
 	}
 });
 
+const GROUP = 'channel-1';
+const inGroup = (id: string | null = GROUP) => ({
+	authorized: true,
+	groups: id ? [{ id, title: 'One' }] : [],
+	activeGroupId: id
+});
+
 describe('telegramService', () => {
 	beforeEach(() => {
 		telegramService.stop();
@@ -169,7 +176,7 @@ describe('telegramService', () => {
 				.fn()
 				.mockResolvedValueOnce(okJson(pending))
 				.mockResolvedValueOnce(okJson({ outcome: 'authenticated', user: { id: 1 } }))
-				.mockResolvedValueOnce(okJson({ authorized: true }))
+				.mockResolvedValueOnce(okJson(inGroup()))
 				.mockResolvedValueOnce(okJson({ files: [] }));
 			vi.stubGlobal('fetch', fetchMock);
 
@@ -184,7 +191,7 @@ describe('telegramService', () => {
 				'/api/telegram/auth/qr',
 				'/api/telegram/auth/qr',
 				'/api/telegram/status',
-				'/api/telegram/files'
+				'/api/telegram/files?group=channel-1'
 			]);
 		});
 
@@ -227,7 +234,7 @@ describe('telegramService', () => {
 			const fetchMock = vi
 				.fn()
 				.mockResolvedValueOnce(okJson({ outcome: 'authenticated' }))
-				.mockResolvedValueOnce(okJson({ state: 'ok' }))
+				.mockResolvedValueOnce(okJson(inGroup()))
 				.mockResolvedValueOnce(okJson({ files: [] }));
 			vi.stubGlobal('fetch', fetchMock);
 			const out = await telegramService.submitCode('123');
@@ -250,7 +257,7 @@ describe('telegramService', () => {
 			const fetchMock = vi
 				.fn()
 				.mockResolvedValueOnce(okJson({ outcome: 'authenticated' }))
-				.mockResolvedValueOnce(okJson({ state: 'ok' }))
+				.mockResolvedValueOnce(okJson(inGroup()))
 				.mockResolvedValueOnce(okJson({ files: [] }));
 			vi.stubGlobal('fetch', fetchMock);
 			const out = await telegramService.submitPassword('pw');
@@ -278,6 +285,8 @@ describe('telegramService', () => {
 	});
 
 	describe('files', () => {
+		beforeEach(() => telegramService.status.set(inGroup() as never));
+
 		it('refreshFiles stores files', async () => {
 			const files = [{ id: 'a', name: 'x' }];
 			vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJson({ files })));
@@ -313,11 +322,15 @@ describe('telegramService', () => {
 		});
 
 		it('downloadUrl encodes the id', () => {
-			expect(telegramService.downloadUrl('a b/c')).toBe('/api/telegram/files/a%20b%2Fc');
+			expect(telegramService.downloadUrl('a b/c', GROUP)).toBe(
+				'/api/telegram/files/a%20b%2Fc?group=channel-1'
+			);
 		});
 	});
 
 	describe('uploads', () => {
+		beforeEach(() => telegramService.status.set(inGroup() as never));
+
 		it('startUpload POSTs and returns snapshot', async () => {
 			const snapshot = { id: 'u', state: 'queued' };
 			const fetchMock = vi
@@ -375,6 +388,70 @@ describe('telegramService', () => {
 			stop2(); // double-stop is a no-op
 			await vi.advanceTimersByTimeAsync(2000);
 			expect(fetchMock).toHaveBeenCalledTimes(3);
+		});
+	});
+
+	describe('groups', () => {
+		beforeEach(() => telegramService.status.set(inGroup() as never));
+
+		it('creates with the title and switches', async () => {
+			const group = { id: 'channel-2', title: 'New' };
+			const fetchMock = vi
+				.fn()
+				.mockResolvedValueOnce(okJson({ group }))
+				.mockResolvedValueOnce(okJson(inGroup('channel-2')));
+			vi.stubGlobal('fetch', fetchMock);
+			await telegramService.createGroup('New');
+			expect(fetchMock.mock.calls[0][0]).toBe('/api/telegram/groups');
+			expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ title: 'New' });
+			expect(get(telegramService.status)?.activeGroupId).toBe('channel-2');
+		});
+
+		it('drops files that arrive for the group just left', async () => {
+			let answer = (_value: unknown) => {};
+			vi.stubGlobal(
+				'fetch',
+				vi.fn().mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+			);
+			const loading = telegramService.refreshFiles();
+			telegramService.status.set(inGroup('channel-2') as never);
+			answer(okJson({ files: [{ id: 'from-group-1' }] }));
+			await loading;
+			expect(get(telegramService.files)).toEqual([]);
+		});
+
+		it('ignores a status sent before the switch', async () => {
+			let answerStale = (_value: unknown) => {};
+			const fetchMock = vi
+				.fn()
+				.mockReturnValueOnce(new Promise((resolve) => (answerStale = resolve)))
+				.mockResolvedValueOnce(okJson({ group: { id: 'channel-2', title: 'Two' } }))
+				.mockResolvedValueOnce(okJson(inGroup('channel-2')));
+			vi.stubGlobal('fetch', fetchMock);
+			const stale = telegramService.refreshStatus();
+			await telegramService.selectGroup('channel-2');
+			answerStale(okJson(inGroup('channel-1')));
+			await stale;
+			expect(get(telegramService.status)?.activeGroupId).toBe('channel-2');
+		});
+
+		it('clears the files when another tab switches', async () => {
+			telegramService.files.set([{ id: 'a' }] as never);
+			vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJson(inGroup('channel-2'))));
+			await telegramService.refreshStatus();
+			expect(get(telegramService.files)).toEqual([]);
+		});
+
+		it('names the group when deleting everything', async () => {
+			const fetchMock = vi.fn().mockResolvedValue(okJson({ files: [] }));
+			vi.stubGlobal('fetch', fetchMock);
+			await telegramService.deleteAllFiles();
+			expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ groupId: GROUP });
+		});
+
+		it('refuses to upload without a group', async () => {
+			telegramService.status.set(inGroup(null) as never);
+			await expect(telegramService.startUpload({ path: '/p' })).rejects.toThrow('group');
 		});
 	});
 

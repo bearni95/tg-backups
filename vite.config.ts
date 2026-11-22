@@ -21,6 +21,10 @@ const { version } = JSON.parse(readFileSync(new URL('./package.json', import.met
 
 export default defineConfig(({ command }) => ({
 	plugins: [localBackend, tailwindcss(), sveltekit()],
+	// Vite's default lets any localhost page read responses, /transfer (the session) included.
+	// Not `cors: false`: SvelteKit merges its own cors object over that.
+	server: { cors: { origin: false } },
+	preview: { cors: { origin: false } },
 	define: {
 		__TGB_VERSION__: JSON.stringify(version),
 		// Build only: the dev server hands every define to the browser.

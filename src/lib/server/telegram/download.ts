@@ -8,7 +8,7 @@ import {
 	MESSAGES_PER_CALL
 } from './chat';
 import type { Connection } from './connection';
-import type { IndexDb } from './db';
+import type { BackupGroup } from './backup-group';
 import { StorageError } from './errors';
 import { InvocationError } from './invocation-error';
 import { chunkCount } from './upload';
@@ -23,8 +23,7 @@ const MAX_MIGRATIONS = 5;
  * before the first byte fails here, before any response headers go out.
  */
 export async function downloadRange(
-	connection: Connection,
-	db: IndexDb,
+	{ connection, db, peer: target }: BackupGroup,
 	row: FileRow,
 	start: number,
 	end: number
@@ -33,7 +32,6 @@ export async function downloadRange(
 	// A backup cut short must never restore as a shorter, valid-looking zip.
 	if (!db.isComplete(row)) throw StorageError.backupIncomplete();
 
-	const target = await connection.targetPeer();
 	let parts = db.listParts(row.id);
 	if (parts.length === 0) {
 		parts = [
@@ -138,10 +136,13 @@ async function* downloadDocument(
 }
 
 /** Delete one backup from the group and the index. */
-export async function deleteFile(connection: Connection, db: IndexDb, row: FileRow): Promise<void> {
+export async function deleteFile(
+	{ connection, db, peer }: BackupGroup,
+	row: FileRow
+): Promise<void> {
 	const ids = db.listParts(row.id).map((part) => part.tgMessageId);
 	if (ids.length === 0) ids.push(row.tgMessageId);
-	await deleteMessagesInBatches(connection, await connection.targetPeer(), ids);
+	await deleteMessagesInBatches(connection, peer, ids);
 
 	// An interrupted backup may be staged. Left behind, those dead message ids
 	// would be fused into a re-upload of the same zip.
@@ -150,8 +151,7 @@ export async function deleteFile(connection: Connection, db: IndexDb, row: FileR
 }
 
 /** Delete every message in the group and clear the index. Returns the message count. */
-export async function deleteAll(connection: Connection, db: IndexDb): Promise<number> {
-	const target = await connection.targetPeer();
+export async function deleteAll({ connection, db, peer: target }: BackupGroup): Promise<number> {
 	const ids: number[] = [];
 	for await (const message of iterateHistory(connection, target)) ids.push(message.id);
 

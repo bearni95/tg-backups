@@ -10,8 +10,8 @@ import type {
 	SessionUpdatesState
 } from '$types/telegram-server.type';
 
-/** Replace the session atomically, so a crash can't leave half a file that reads as signed out. */
-export function writeSessionFile(path: string, text: string): void {
+/** Replace a file atomically and owner-only, so a crash can't leave half of it. */
+export function writePrivateFile(path: string, text: string): void {
 	const extension = extname(path);
 	const temporary = `${extension ? path.slice(0, -extension.length) : path}.json.tmp`;
 	writeFileSync(temporary, text, { mode: 0o600 });
@@ -113,7 +113,7 @@ export class FileSession {
 	private save(): void {
 		if (this.closed) return;
 		try {
-			writeSessionFile(this.path, telegramSessionAdapter.toFile(this.data));
+			writePrivateFile(this.path, telegramSessionAdapter.toFile(this.data));
 		} catch (error) {
 			log.error(`session write to ${this.path} failed: ${describeError(error)}`);
 		}

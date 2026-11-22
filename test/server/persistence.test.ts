@@ -8,20 +8,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveDataDir } from '../../src/lib/server/data-dir';
 import { loadDotenv } from '../../src/lib/server/env';
 import {
-	AccessKey,
-	parseRequestCookie,
-	setCookieValue,
-	TTL_SECONDS
-} from '../../src/lib/server/telegram/access-cookie';
-import {
-	accessGroupFromEnv,
 	clearCredentials,
 	credentialsFromBuild,
 	credentialsFromEnv,
 	loadCredentials,
 	saveCredentials
 } from '../../src/lib/server/telegram/config';
-import { accessKeyPath, credentialsPath, sessionPath } from '../../src/lib/server/telegram/paths';
+import {
+	credentialsPath,
+	groupIndexPath,
+	groupsPath,
+	sessionPath
+} from '../../src/lib/server/telegram/paths';
 import { FileSession } from '../../src/lib/server/telegram/session';
 import { MtcuteTransport, sessionStorage } from '../../src/lib/server/telegram/transport';
 
@@ -57,7 +55,10 @@ describe('paths', () => {
 	it('keeps every existing file name', () => {
 		expect(sessionPath('/tmp/root')).toBe('/tmp/root/telegram/session.sqlite');
 		expect(credentialsPath('/tmp/root')).toBe('/tmp/root/telegram/credentials.json');
-		expect(accessKeyPath('/tmp/root')).toBe('/tmp/root/telegram/access_cookie.key');
+		expect(groupsPath('/tmp/root')).toBe('/tmp/root/telegram/groups.json');
+		expect(groupIndexPath('/tmp/root', 42, 'channel-7')).toBe(
+			'/tmp/root/telegram/groups/42/channel-7.sqlite'
+		);
 	});
 
 	it('resolves the data dir', () => {
@@ -128,11 +129,6 @@ describe('credentials', () => {
 		);
 		expect(credentialsFromBuild('12345', 'abc')).toEqual(expected);
 		expect(credentialsFromBuild()).toBeNull();
-	});
-
-	it('treat a blank group as unset', () => {
-		vi.stubEnv('TGB_TELEGRAM_ACCESS_GROUP', '  ');
-		expect(accessGroupFromEnv()).toBeNull();
 	});
 });
 
@@ -243,52 +239,5 @@ describe('mtcute on an existing session', () => {
 			kind: 'dropped'
 		});
 		expect(readFileSync(path, 'utf8')).toBe(EXISTING_SESSION);
-	});
-});
-
-describe('access cookie', () => {
-	const key = new AccessKey(new Uint8Array(32).fill(7));
-	const now = 1_000_000;
-	const token = key.issue(42, now);
-	const mac = token.split('.')[2];
-
-	it('round-trips until it expires', () => {
-		expect(key.verify(token, now)).toBe(42);
-		expect(key.verify(token, now + TTL_SECONDS - 1)).toBe(42);
-		expect(key.verify(token, now + TTL_SECONDS)).toBeNull();
-		expect(key.verify(token, now + TTL_SECONDS + 10)).toBeNull();
-	});
-
-	it("can't be forged", () => {
-		const last = token.endsWith('0') ? '1' : '0';
-		expect(key.verify(token.slice(0, -1) + last, now)).toBeNull();
-		expect(key.verify(`99.${now + TTL_SECONDS}.${mac}`, now)).toBeNull();
-		expect(new AccessKey(new Uint8Array(32).fill(9)).verify(token, now)).toBeNull();
-	});
-
-	it.each(['', 'garbage', '1.2', '1.notanumber.abcd', '1.9999999999.zz', '1.2.3.4'])(
-		'rejects "%s"',
-		(bad) => {
-			expect(key.verify(bad, 1)).toBeNull();
-		}
-	);
-
-	it('persists its key, owner-only', () => {
-		const issued = AccessKey.loadOrCreate(root).issue(5, 1000);
-		expect(AccessKey.loadOrCreate(root).verify(issued, 1000)).toBe(5);
-		expect(readFileSync(accessKeyPath(root))).toHaveLength(32);
-		expect(statSync(accessKeyPath(root)).mode & 0o777).toBe(0o600);
-	});
-
-	it('is read from among other cookies', () => {
-		const headers = new Headers({ cookie: 'foo=bar; tgb_access=tok123; baz=qux' });
-		expect(parseRequestCookie(headers)).toBe('tok123');
-		expect(parseRequestCookie(new Headers())).toBeNull();
-	});
-
-	it('is set with the same attributes', () => {
-		expect(setCookieValue('tok')).toBe(
-			'tgb_access=tok; Max-Age=3600; Path=/; HttpOnly; SameSite=Lax'
-		);
 	});
 });

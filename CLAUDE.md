@@ -36,6 +36,7 @@ $data        → src/data/*
 
 ## Backend
 
+- Backup groups are created and chosen in the UI, never configured through the environment.
 - The backend is TypeScript inside SvelteKit. Read `src/lib/server/telegram/CLAUDE.md` before touching it: several on-disk and on-Telegram formats must not change.
 - Route handlers only parse the request, call `src/lib/server`, and serialise the result.
 - `server.ts` and what it imports run under plain Node: relative imports with `.ts`, no aliases, erasable syntax only.

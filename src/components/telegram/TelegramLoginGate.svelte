@@ -3,7 +3,6 @@
 	import { telegramService } from '$services/telegram.service';
 	import TelegramCredentialsForm from '$components/telegram/TelegramCredentialsForm.svelte';
 	import TelegramAuthWizard from '$components/telegram/TelegramAuthWizard.svelte';
-	import TelegramAccessDenied from '$components/telegram/TelegramAccessDenied.svelte';
 	import TelegramQrLogin from '$components/telegram/TelegramQrLogin.svelte';
 	import classNames from 'classnames';
 	import type { TelegramCredentials } from '$types/telegram.type';
@@ -21,7 +20,6 @@
 	const hasCredentials = $derived($status?.hasCredentials ?? false);
 	const authorized = $derived($status?.authorized ?? false);
 	const signedIn = $derived($status?.signedIn ?? false);
-	const accessDenied = $derived($status?.accessDenied ?? false);
 	const showCredentialsForm = $derived(!hasCredentials || credentials === null);
 
 	// The gate blocks the whole UI until Telegram sign-in completes. Before
@@ -106,23 +104,6 @@
 		}
 	}
 
-	async function handleRecheckAccess() {
-		busy = true;
-		try {
-			await telegramService.recheckAccess();
-		} finally {
-			busy = false;
-		}
-	}
-
-	async function handleSignOut() {
-		busy = true;
-		try {
-			await telegramService.logout();
-		} finally {
-			busy = false;
-		}
-	}
 	async function handleClearCredentials() {
 		busy = true;
 		try {
@@ -150,7 +131,7 @@
 				</div>
 			{/if}
 
-			{#if !credentialsLoaded || !$status || (signedIn && !accessDenied)}
+			{#if !credentialsLoaded || !$status || signedIn}
 				<div class="flex flex-1 items-center justify-center">
 					<span class="loading loading-spinner"></span>
 				</div>
@@ -174,7 +155,7 @@
 									<button
 										class="btn btn-ghost btn-sm"
 										onclick={handleClearCredentials}
-										disabled={busy || signedIn}
+										disabled={busy}
 									>
 										clear
 									</button>
@@ -188,7 +169,7 @@
 							<h3 class="font-semibold">QR code</h3>
 							<TelegramQrLogin
 								qrUrl={$qrLogin?.url ?? null}
-								disabled={showCredentialsForm || signedIn || stage === 'awaiting_password'}
+								disabled={showCredentialsForm || stage === 'awaiting_password'}
 								onStart={() => telegramService.startQrLogin()}
 							/>
 						</div>
@@ -196,30 +177,21 @@
 
 					<section class="card min-h-0 overflow-y-auto bg-base-200">
 						<div class="card-body gap-3 p-4">
-							<h3 class="font-semibold">{signedIn ? 'Account' : 'Phone number'}</h3>
-							{#if signedIn}
-								<TelegramAccessDenied
-									user={$status.user}
+							<h3 class="font-semibold">Phone number</h3>
+							<fieldset
+								disabled={showCredentialsForm}
+								class={classNames({ 'opacity-50': showCredentialsForm })}
+							>
+								<TelegramAuthWizard
+									{stage}
+									delivery={$status?.codeDelivery ?? null}
 									{busy}
-									onRecheck={handleRecheckAccess}
-									onSignOut={handleSignOut}
+									onStart={handleStartAuth}
+									onResend={handleResendCode}
+									onSubmitCode={handleSubmitCode}
+									onSubmitPassword={handleSubmitPassword}
 								/>
-							{:else}
-								<fieldset
-									disabled={showCredentialsForm}
-									class={classNames({ 'opacity-50': showCredentialsForm })}
-								>
-									<TelegramAuthWizard
-										{stage}
-										delivery={$status?.codeDelivery ?? null}
-										{busy}
-										onStart={handleStartAuth}
-										onResend={handleResendCode}
-										onSubmitCode={handleSubmitCode}
-										onSubmitPassword={handleSubmitPassword}
-									/>
-								</fieldset>
-							{/if}
+							</fieldset>
 						</div>
 					</section>
 				</div>

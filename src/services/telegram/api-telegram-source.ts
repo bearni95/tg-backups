@@ -2,11 +2,17 @@ import type {
 	TelegramAuthOutcome,
 	TelegramCredentials,
 	TelegramFile,
+	TelegramGroup,
+	TelegramGroupInfo,
 	TelegramQrStep,
 	TelegramStatus,
 	TelegramUploadSnapshot
 } from '$types/telegram.type';
 import { jsonFetch, type StartUploadInput, type TelegramSource } from './telegram-source';
+
+function inGroup(path: string, groupId: string): string {
+	return `${path}?group=${encodeURIComponent(groupId)}`;
+}
 
 /** The SvelteKit backend (`src/routes/api/telegram`) over `/api/telegram/*`. */
 export class ApiTelegramSource implements TelegramSource {
@@ -66,52 +72,83 @@ export class ApiTelegramSource implements TelegramSource {
 		await jsonFetch<unknown>('/api/telegram/auth/logout', { method: 'POST' });
 	}
 
-	async recheckAccess(): Promise<void> {
-		await jsonFetch<unknown>('/api/telegram/access/recheck', { method: 'POST' });
+	async createGroup(title: string): Promise<TelegramGroup> {
+		const data = await jsonFetch<{ group: TelegramGroup }>('/api/telegram/groups', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ title })
+		});
+		return data.group;
 	}
 
-	async listFiles(): Promise<TelegramFile[]> {
-		const data = await jsonFetch<{ files: TelegramFile[] }>('/api/telegram/files');
+	async listAvailableGroups(): Promise<TelegramGroup[]> {
+		const data = await jsonFetch<{ groups: TelegramGroup[] }>('/api/telegram/groups/available');
+		return data.groups;
+	}
+
+	async selectGroup(id: string): Promise<TelegramGroup> {
+		const data = await jsonFetch<{ group: TelegramGroup }>('/api/telegram/groups/select', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ id })
+		});
+		return data.group;
+	}
+
+	getGroupInfo(id: string): Promise<TelegramGroupInfo> {
+		return jsonFetch<TelegramGroupInfo>(`/api/telegram/groups/${encodeURIComponent(id)}`);
+	}
+
+	async listFiles(groupId: string): Promise<TelegramFile[]> {
+		const data = await jsonFetch<{ files: TelegramFile[] }>(
+			inGroup('/api/telegram/files', groupId)
+		);
 		return data.files;
 	}
 
-	async scanMetadata(): Promise<TelegramFile[]> {
-		const data = await jsonFetch<{ files: TelegramFile[] }>('/api/telegram/files?scope=metadata');
+	async scanMetadata(groupId: string): Promise<TelegramFile[]> {
+		const data = await jsonFetch<{ files: TelegramFile[] }>(
+			`${inGroup('/api/telegram/files', groupId)}&scope=metadata`
+		);
 		return data.files;
 	}
 
-	loadMediaForPipeline(pipelineId: string): Promise<TelegramFile> {
+	loadMediaForPipeline(pipelineId: string, groupId: string): Promise<TelegramFile> {
 		return jsonFetch<TelegramFile>(
-			`/api/telegram/files/load-media/${encodeURIComponent(pipelineId)}`,
+			inGroup(`/api/telegram/files/load-media/${encodeURIComponent(pipelineId)}`, groupId),
 			{ method: 'POST' }
 		);
 	}
 
-	async uploadFile(file: File): Promise<void> {
+	async uploadFile(file: File, groupId: string): Promise<void> {
 		const body = new FormData();
 		body.append('name', file.name);
 		body.append('size', String(file.size));
 		body.append('file', file, file.name);
-		await jsonFetch<unknown>('/api/telegram/files', { method: 'POST', body });
+		await jsonFetch<unknown>(inGroup('/api/telegram/files', groupId), { method: 'POST', body });
 	}
 
-	async deleteFile(id: string): Promise<void> {
-		await jsonFetch<unknown>(`/api/telegram/files/${encodeURIComponent(id)}`, {
+	async deleteFile(id: string, groupId: string): Promise<void> {
+		await jsonFetch<unknown>(inGroup(`/api/telegram/files/${encodeURIComponent(id)}`, groupId), {
 			method: 'DELETE'
 		});
 	}
 
-	async deleteAllFiles(): Promise<void> {
-		await jsonFetch<unknown>('/api/telegram/files/delete-all', { method: 'POST' });
+	async deleteAllFiles(groupId: string): Promise<void> {
+		await jsonFetch<unknown>('/api/telegram/files/delete-all', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ groupId })
+		});
 	}
 
-	downloadUrl(id: string): string {
-		return `/api/telegram/files/${encodeURIComponent(id)}`;
+	downloadUrl(id: string, groupId: string): string {
+		return inGroup(`/api/telegram/files/${encodeURIComponent(id)}`, groupId);
 	}
 
-	async startUpload(input: StartUploadInput): Promise<TelegramUploadSnapshot> {
+	async startUpload(input: StartUploadInput, groupId: string): Promise<TelegramUploadSnapshot> {
 		const body = await jsonFetch<{ uploadId: string; snapshot: TelegramUploadSnapshot }>(
-			'/api/telegram/uploads',
+			inGroup('/api/telegram/uploads', groupId),
 			{
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },

@@ -5,6 +5,7 @@ import mime from 'mime';
 import { log } from '$lib/server/logger';
 import { isAllowedBackup } from '$utils/telegram/mediaType';
 import type { TelegramUploadSnapshot } from '$types/telegram.type';
+import type { BackupGroup } from './backup-group';
 import { StorageError } from './errors';
 import type { TelegramStorage } from './storage';
 import { MAX_UPLOAD_BYTES, type UploadRequest } from './upload';
@@ -62,26 +63,29 @@ function describeFile(path: string, size: number, input: PathUploadInput): Uploa
 /** Upload a file on this machine and wait for it. */
 export async function uploadFromPath(
 	storage: TelegramStorage,
+	group: BackupGroup,
 	input: PathUploadInput
 ): Promise<string> {
 	const { path, info } = await checkPath(storage, input.path);
 	if (!info.isFile()) throw StorageError.badRequest('path is not a regular file');
 	const request = describeFile(path, info.size, input);
-	return (await storage.files.uploadLocalFile(path, request)).id;
+	return (await group.files.uploadLocalFile(path, request)).id;
 }
 
 /** Queue a background upload of a zip, or of every zip under a folder. */
 export async function startUpload(
 	storage: TelegramStorage,
+	group: BackupGroup,
 	input: PathUploadInput & { refId?: string }
 ): Promise<TelegramUploadSnapshot> {
 	const { path, info } = await checkPath(storage, input.path);
 	const refId = input.refId?.trim();
-	if (info.isDirectory()) return startFolder(storage, path, input, refId);
+	if (info.isDirectory()) return startFolder(storage, group, path, input, refId);
 	if (!info.isFile()) throw StorageError.badRequest('path is not a regular file');
 
 	const { name, mimeType, totalSize } = describeFile(path, info.size, input);
 	return storage.uploads.spawn({
+		group,
 		path,
 		name,
 		mimeType,
@@ -94,6 +98,7 @@ export async function startUpload(
 
 async function startFolder(
 	storage: TelegramStorage,
+	group: BackupGroup,
 	folder: string,
 	{ metadata, text }: PathUploadInput,
 	refId: string | undefined
@@ -120,6 +125,7 @@ async function startFolder(
 			continue;
 		}
 		const spawned = storage.uploads.spawn({
+			group,
 			path,
 			name,
 			mimeType,

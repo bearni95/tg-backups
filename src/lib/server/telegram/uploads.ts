@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { log } from '$lib/server/logger';
 import { Semaphore } from '$lib/server/sync';
 import type { TelegramChunkSnapshot, TelegramUploadSnapshot } from '$types/telegram.type';
+import type { BackupGroup } from './backup-group';
 import { AbortControl, PauseControl } from './controls';
 import { StorageError } from './errors';
 import { chunkCount, MAX_CHUNK_BYTES, type UploadRequest, type UploadResult } from './upload';
@@ -12,6 +13,8 @@ import { chunkCount, MAX_CHUNK_BYTES, type UploadRequest, type UploadResult } fr
 export const MAX_CONCURRENT_UPLOADS = 1;
 
 export interface BackgroundUpload {
+	/** Fixed when queued: switching groups later doesn't move it. */
+	group: BackupGroup;
 	/** Bytes when the name isn't valid UTF-8. */
 	path: string | Buffer;
 	name: string;
@@ -22,7 +25,7 @@ export interface BackgroundUpload {
 	text?: string;
 }
 
-type UploadLocalFile = (path: string | Buffer, request: UploadRequest) => Promise<UploadResult>;
+type RunUpload = (job: BackgroundUpload, request: UploadRequest) => Promise<UploadResult>;
 
 interface ActiveUpload {
 	snapshot: TelegramUploadSnapshot;
@@ -59,7 +62,7 @@ export class UploadRegistry {
 	private readonly uploads = new Map<string, ActiveUpload>();
 	private readonly gate = new Semaphore(MAX_CONCURRENT_UPLOADS);
 
-	constructor(private readonly uploadLocalFile: UploadLocalFile) {}
+	constructor(private readonly run: RunUpload) {}
 
 	list(): TelegramUploadSnapshot[] {
 		return [...this.uploads.values()]
@@ -106,6 +109,8 @@ export class UploadRegistry {
 			snapshot: {
 				uploadId: randomUUID(),
 				refId: job.refId,
+				groupId: job.group.id,
+				groupTitle: job.group.title,
 				name: job.name,
 				status: 'running',
 				bytesUploaded: 0,
@@ -136,7 +141,7 @@ export class UploadRegistry {
 			snapshot.transferStartedAt = unixSeconds();
 			if (abort.isAborted) throw StorageError.uploadAborted();
 
-			const result = await this.uploadLocalFile(job.path, {
+			const result = await this.run(job, {
 				name: job.name,
 				mimeType: job.mimeType,
 				totalSize: job.totalBytes,

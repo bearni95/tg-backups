@@ -2,6 +2,7 @@
 import { Long, type tl } from '@mtcute/node';
 import { describe, expect, it } from 'vitest';
 import { telegramAuthAdapter } from '../../src/adapters/classes/telegram-auth.adapter';
+import { telegramGroupAdapter } from '../../src/adapters/classes/telegram-group.adapter';
 import { telegramFileAdapter } from '../../src/adapters/classes/telegram-file.adapter';
 import { telegramMarkerAdapter } from '../../src/adapters/classes/telegram-marker.adapter';
 import { telegramMessageAdapter } from '../../src/adapters/classes/telegram-message.adapter';
@@ -183,20 +184,55 @@ describe('peer adapter', () => {
 		expect(telegramPeerAdapter.matches({ _: 'peerChannel', channelId: 7 }, ref)).toBe(true);
 		expect(telegramPeerAdapter.matches({ _: 'peerChat', chatId: 7 }, ref)).toBe(false);
 	});
+});
 
-	it("won't address a min channel", () => {
-		const channel: tl.RawChannel = {
-			_: 'channel',
-			min: true,
-			id: 7,
-			accessHash: Long.ONE,
-			title: 't',
-			photo: { _: 'chatPhotoEmpty' },
-			date: 1
-		};
-		const peer: tl.TypePeer = { _: 'peerChannel', channelId: 7 };
-		expect(telegramPeerAdapter.fromResolved(peer, [], [channel])).toBeNull();
+describe('group adapter', () => {
+	const channel = (flags: Partial<tl.RawChannel>): tl.RawChannel => ({
+		_: 'channel',
+		megagroup: true,
+		id: 7,
+		accessHash: Long.fromString('-8123456789012345678'),
+		title: 'Backups',
+		photo: { _: 'chatPhotoEmpty' },
+		date: 1,
+		...flags
 	});
+	const noFiles: tl.RawChatBannedRights = { _: 'chatBannedRights', sendDocs: true, untilDate: 0 };
+
+	it('round-trips the access hash exactly', () => {
+		const saved = telegramGroupAdapter.fromChat(channel({}))!;
+		expect(saved).toEqual({
+			id: 'channel-7',
+			title: 'Backups',
+			accessHash: '-8123456789012345678'
+		});
+		expect(telegramGroupAdapter.toPeer(saved, Long.fromString).accessHash.toString()).toBe(
+			saved.accessHash
+		);
+	});
+
+	it.each<[string, Partial<tl.RawChannel>]>([
+		['left', { left: true }],
+		['min', { min: true }],
+		['no hash', { accessHash: undefined }],
+		['a channel it only reads', { megagroup: false, broadcast: true }],
+		['files banned for all', { defaultBannedRights: noFiles }],
+		['files banned for it', { bannedRights: noFiles }]
+	])('refuses %s', (_label, flags) => {
+		expect(telegramGroupAdapter.fromChat(channel(flags))).toBeNull();
+	});
+
+	it('lets a creator past the default restrictions', () => {
+		const chat = channel({ creator: true, defaultBannedRights: noFiles });
+		expect(telegramGroupAdapter.fromChat(chat)).not.toBeNull();
+	});
+
+	it.each(['channel-', 'user-5', 'channel-1/../../x', '../channel-1', 'channel-0'])(
+		'%s is not a group id',
+		(id) => {
+			expect(telegramGroupAdapter.isGroupId(id)).toBe(false);
+		}
+	);
 });
 
 describe('message adapter', () => {
