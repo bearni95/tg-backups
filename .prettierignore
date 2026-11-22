@@ -7,8 +7,3 @@ bun.lockb
 
 # Miscellaneous
 /static/
-
-# Rust
-/target/
-/packages/
-/Cargo.lock

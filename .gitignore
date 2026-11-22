@@ -28,6 +28,3 @@ coverage/
 
 # Build output
 /dist/
-
-# Rust
-/target/

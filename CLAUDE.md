@@ -5,10 +5,14 @@ This document guides Claude (and developers) on implementing features using this
 ## Project Structure
 
 ```
+server.ts                 # Production entry: serves dist/ on 127.0.0.1
 src/
 ├── adapters/classes/     # Data transformation logic
 ├── components/core/      # Reusable UI components
+├── hooks.server.ts       # Backend boot and localhost-only guard
+├── lib/server/           # Backend, never importable from client code
 ├── routes/               # SvelteKit pages and layouts
+│   └── api/              # HTTP API: thin handlers over lib/server
 ├── services/classes/     # State management with localStorage persistence
 ├── types/                # TypeScript type definitions
 ├── utils/                # Pure utility functions
@@ -27,6 +31,15 @@ $utils       → src/utils/*
 $types       → src/types/*
 $data        → src/data/*
 ```
+
+---
+
+## Backend
+
+- The backend is TypeScript inside SvelteKit. Read `src/lib/server/telegram/CLAUDE.md` before touching it: several on-disk and on-Telegram formats must not change.
+- Route handlers only parse the request, call `src/lib/server`, and serialise the result.
+- `server.ts` and what it imports run under plain Node: relative imports with `.ts`, no aliases, erasable syntax only.
+- Server tests live in `test/server/` and start with `// @vitest-environment node`.
 
 ---
 
