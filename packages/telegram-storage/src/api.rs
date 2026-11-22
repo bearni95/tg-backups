@@ -43,6 +43,7 @@ use tokio_util::io::ReaderStream;
 
 use crate::access_cookie;
 use crate::auth::{self, AuthOutcome, AuthUser, CodeDelivery, LoginInProgress, SubmitCodeOutcome};
+use crate::backup;
 use crate::client::ConnectedClient;
 use crate::config::{self, Credentials};
 use crate::db as index_db;
@@ -758,6 +759,8 @@ struct FileEntry {
     id: String,
     name: String,
     size_bytes: i64,
+    /// Every byte is on Telegram. Only complete backups can be restored.
+    complete: bool,
     mime_type: String,
     created_at: String,
     /// Legacy free-text caption attached to the Telegram message. New
@@ -777,19 +780,21 @@ struct FileEntry {
     metadata: Option<serde_json::Value>,
 }
 
-impl From<index_db::FileRow> for FileEntry {
-    fn from(row: index_db::FileRow) -> Self {
+impl FileEntry {
+    async fn load(db: &crate::pool::Db, row: index_db::FileRow) -> Result<Self, StorageError> {
         let metadata = row.metadata_value().ok().flatten();
-        Self {
+        let complete = crate::download::is_complete(db, &row).await?;
+        Ok(Self {
             id: row.id,
-            name: row.name,
+            name: backup::original_name(&row.name),
+            complete,
             size_bytes: row.size_bytes,
             mime_type: row.mime_type,
             created_at: row.created_at.to_rfc3339(),
             text: row.text,
             checksum_sha256: row.checksum_sha256,
             metadata,
-        }
+        })
     }
 }
 
@@ -842,7 +847,10 @@ async fn list_files(
         }
     }
     let rows = index_db::list(s.db()).await?;
-    let mut entries: Vec<FileEntry> = rows.into_iter().map(FileEntry::from).collect();
+    let mut entries = Vec::with_capacity(rows.len());
+    for row in rows {
+        entries.push(FileEntry::load(s.db(), row).await?);
+    }
     if metadata_scope {
         // Catalog fast path: hand back only the metadata sidecar rows
         // so the page can show pipeline cards without paying for the
@@ -877,7 +885,7 @@ async fn load_media_for_pipeline(
         return Err(StorageError::BadRequest("pipelineId is empty".into()));
     }
     if let Some(row) = index_db::find_media_by_pipeline_id(s.db(), pipeline_id).await? {
-        return Ok(Json(FileEntry::from(row)));
+        return Ok(Json(FileEntry::load(s.db(), row).await?));
     }
     let connected_opt = {
         let guard = s.inner().connected.lock().await;
@@ -890,7 +898,7 @@ async fn load_media_for_pipeline(
         .reconcile_chat_media_for_pipeline(s.db(), pipeline_id)
         .await?;
     match index_db::find_media_by_pipeline_id(s.db(), pipeline_id).await? {
-        Some(row) => Ok(Json(FileEntry::from(row))),
+        Some(row) => Ok(Json(FileEntry::load(s.db(), row).await?)),
         None => Err(StorageError::NotFound),
     }
 }
@@ -1021,7 +1029,7 @@ async fn upload_file(
     let row = index_db::get(s.db(), &upload_result.id)
         .await?
         .ok_or_else(|| StorageError::Internal("upload row missing after insert".into()))?;
-    Ok(Json(FileEntry::from(row)))
+    Ok(Json(FileEntry::load(s.db(), row).await?))
 }
 
 #[derive(Deserialize)]
@@ -1132,7 +1140,7 @@ async fn upload_from_path(
     let row = index_db::get(s.db(), &upload_result.id)
         .await?
         .ok_or_else(|| StorageError::Internal("upload row missing after insert".into()))?;
-    Ok(Json(FileEntry::from(row)))
+    Ok(Json(FileEntry::load(s.db(), row).await?))
 }
 
 /// Allow paths under the storage data root, resolved against the
@@ -1155,33 +1163,11 @@ async fn download_file(
         .ok_or(StorageError::NotFound)?;
     let total = row.size_bytes.max(0) as u64;
 
-    // For files whose upload is still in flight, only chunks that have
-    // already landed on Telegram have backing `tg_file_part` rows — the
-    // download path can only serve those. Read the available tail here
-    // and clamp the response to exactly what we can deliver, so the
-    // body's byte count matches `Content-Length` and the browser keeps
-    // issuing follow-up Range requests as new chunks land. The
-    // `Content-Range` still reports the declared total so the player's
-    // seek-bar UI uses the eventual size, not the currently-uploaded
-    // tail.
-    let mut available = index_db::list_parts_total_size(s.db(), &id).await?;
-    if available == 0 && total > 0 {
-        // Head row exists but chunk 0 hasn't landed yet — typical for
-        // the streaming-while-uploading path where the catalog opens
-        // the player a few hundred ms before the first chunk's
-        // `sendMedia` succeeds. Hold the request briefly so the player
-        // doesn't see a 416 storm at the very start of a session.
-        available = wait_for_first_part(s.db(), &id).await?;
+    // Unlike media playback there is nothing useful in a partly uploaded
+    // zip, so there is no serving of the uploaded tail.
+    if !crate::download::is_complete(s.db(), &row).await? {
+        return Err(StorageError::BackupIncomplete);
     }
-    let serveable_end_inclusive = if total == 0 || available == 0 {
-        // Empty file: there's nothing to serve, and the 200 OK path
-        // below produces an empty body with Content-Length: 0.
-        // No parts yet (after the brief wait): the 416 arm below catches
-        // any Range request; the no-range 200 OK path returns nothing.
-        0
-    } else {
-        total.saturating_sub(1).min(available.saturating_sub(1))
-    };
 
     // Parse the optional Range header. Safari iOS *requires* byte-range
     // support for HTML5 audio/video — without 206 responses + matching
@@ -1209,34 +1195,7 @@ async fn download_file(
         None => (0u64, total.saturating_sub(1), StatusCode::OK),
     };
 
-    // Clamp to currently-uploaded tail.
-    //
-    //  * If `start` is past the tail, there's nothing to serve yet:
-    //    surface 416 so the player retries (most browsers back off and
-    //    re-issue within ~1 s — roughly the cadence new chunks land
-    //    at). `Content-Range: bytes */<total>` keeps the player's
-    //    seek bar pointed at the eventual full size.
-    //  * Otherwise clamp `end` to the tail. The player consumes what
-    //    we deliver, then asks for the next slice — at that point
-    //    later chunks have usually landed and `available` has grown.
-    if total > 0 && start > serveable_end_inclusive {
-        let mut resp = Response::builder()
-            .status(StatusCode::RANGE_NOT_SATISFIABLE)
-            .body(Body::empty())
-            .map_err(|e| StorageError::Internal(e.to_string()))?;
-        resp.headers_mut()
-            .insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
-        if let Ok(v) = HeaderValue::from_str(&format!("bytes */{total}")) {
-            resp.headers_mut().insert(header::CONTENT_RANGE, v);
-        }
-        return Ok(resp);
-    }
-    let effective_end = if total == 0 {
-        end
-    } else {
-        end.min(serveable_end_inclusive)
-    };
-
+    let effective_end = end;
     let (_, stream) = s.download_range(&id, start, effective_end).await?;
 
     let length = if total == 0 {
@@ -1266,51 +1225,21 @@ async fn download_file(
     );
     h.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
     if status == StatusCode::PARTIAL_CONTENT {
-        // Content-Range carries the **declared** total so the player's
-        // seek-bar UI uses the full eventual size, not the currently-
-        // uploaded tail. The `end` in the range header is the highest
-        // byte index in this response — clamped to what we can serve.
         if let Ok(v) =
             HeaderValue::from_str(&format!("bytes {start}-{effective_end}/{total}"))
         {
             h.insert(header::CONTENT_RANGE, v);
         }
     }
-    // `inline` is the correct disposition for media playback; the
-    // previous `attachment` triggers a download in some clients and
-    // can confuse Safari's media element pipeline.
-    let disp = format!("inline; filename=\"{}\"", sanitise(&row.name));
+    let disp = format!(
+        "attachment; filename=\"{}\"",
+        sanitise(&backup::original_name(&row.name))
+    );
     h.insert(
         header::CONTENT_DISPOSITION,
-        HeaderValue::from_str(&disp).unwrap_or_else(|_| HeaderValue::from_static("inline")),
+        HeaderValue::from_str(&disp).unwrap_or_else(|_| HeaderValue::from_static("attachment")),
     );
     Ok(response)
-}
-
-/// Poll `tg_file_part` for the first part row to appear, up to a short
-/// budget. Returns the sum of part bytes once at least one part exists
-/// (or 0 if the budget elapsed without any part landing). Called by the
-/// download handler when the head row is present but no chunks have
-/// been written yet — typically a few hundred milliseconds at the very
-/// start of a streaming-while-uploading session, so the player doesn't
-/// see a 416 storm on the initial probe.
-async fn wait_for_first_part(
-    db: &crate::pool::Db,
-    tg_file_id: &str,
-) -> Result<u64, StorageError> {
-    const MAX_WAIT: std::time::Duration = std::time::Duration::from_millis(2_500);
-    const POLL: std::time::Duration = std::time::Duration::from_millis(200);
-    let started = std::time::Instant::now();
-    loop {
-        let available = index_db::list_parts_total_size(db, tg_file_id).await?;
-        if available > 0 {
-            return Ok(available);
-        }
-        if started.elapsed() >= MAX_WAIT {
-            return Ok(0);
-        }
-        tokio::time::sleep(POLL).await;
-    }
 }
 
 /// Parse a single-range `Range: bytes=START-END` header against the
@@ -1488,14 +1417,12 @@ async fn start_upload(
                 .first_or_octet_stream()
                 .essence_str()
                 .to_string();
-            // Skip non-media bundled torrent files (.srt subtitles,
-            // .jpg cover art, .nfo text) instead of failing the whole
-            // batch — the rest of the directory may still have a real
-            // video/audio file worth uploading.
+            // Skip whatever else sits next to the zips instead of failing
+            // the whole batch.
             if !media_type::is_allowed(&name, &mime) {
                 log::info!(
                     target: "tgb-telegram-storage",
-                    "skipping non-media file {file_path:?} (mime={mime})",
+                    "skipping non-zip file {file_path:?} (mime={mime})",
                 );
                 continue;
             }

@@ -27,13 +27,15 @@ pub enum StorageError {
     #[error("file too large: {limit_bytes} byte limit")]
     FileTooLarge { limit_bytes: u64 },
     #[error(
-        "unsupported media type for {name:?} (mime={mime}); only video/* and audio/* are accepted"
+        "unsupported file type for {name:?} (mime={mime}); only .zip backups are accepted"
     )]
     UnsupportedMediaType { name: String, mime: String },
     #[error("file not found")]
     NotFound,
     #[error("checksum mismatch: expected {expected}, got {actual}")]
     ChecksumMismatch { expected: String, actual: String },
+    #[error("backup is incomplete; upload the same zip again to finish it")]
+    BackupIncomplete,
     #[error("upload aborted by caller")]
     UploadAborted,
     #[error("rate limited; retry after {retry_after_seconds}s")]
@@ -62,6 +64,7 @@ impl StorageError {
             Self::InvalidPassword => "invalid_password",
             Self::FileTooLarge { .. } => "file_too_large",
             Self::UnsupportedMediaType { .. } => "unsupported_media_type",
+            Self::BackupIncomplete => "backup_incomplete",
             Self::NotFound => "not_found",
             Self::ChecksumMismatch { .. } => "checksum_mismatch",
             Self::UploadAborted => "upload_aborted",
@@ -85,6 +88,7 @@ impl StorageError {
             | Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::FileTooLarge { .. } => StatusCode::PAYLOAD_TOO_LARGE,
             Self::UnsupportedMediaType { .. } => StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            Self::BackupIncomplete => StatusCode::CONFLICT,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::ChecksumMismatch { .. } => StatusCode::UNPROCESSABLE_ENTITY,
             Self::UploadAborted => StatusCode::CONFLICT,

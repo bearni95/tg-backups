@@ -22,6 +22,7 @@ use tokio::fs;
 use tokio::sync::Mutex;
 
 use crate::auth::LoginInProgress;
+use crate::backup;
 use crate::client::ConnectedClient;
 use crate::config::{self, Credentials};
 use crate::db::{self as index_db, FileRow};
@@ -175,16 +176,14 @@ impl TelegramStorage {
     /// uploads the chunks that never landed. See [`upload::upload`].
     pub async fn upload_stream<S>(
         &self,
-        request: UploadRequest,
-        stream: S,
+        mut request: UploadRequest,
+        mut stream: S,
     ) -> Result<UploadResult, StorageError>
     where
         S: tokio::io::AsyncRead + tokio::io::AsyncSeek + Unpin,
     {
-        // Chat is a backing store for playable media only — reject text,
-        // images, archives, and other torrent-bundled noise before we
-        // open the MTProto connection or burn bandwidth on a file
-        // Telegram is going to keep but no consumer will ever read.
+        // The group is a backing store for backups only: reject anything
+        // that isn't a zip before opening the MTProto connection.
         if !media_type::is_allowed(&request.name, &request.mime_type) {
             return Err(StorageError::UnsupportedMediaType {
                 name: request.name.clone(),
@@ -192,7 +191,24 @@ impl TelegramStorage {
             });
         }
         let connected = self.connected_client().await?;
-        upload::upload(&connected, self.db(), request, stream).await
+        let digest = backup::content_sha256(
+            &mut stream,
+            request.total_size_bytes,
+            request.abort.as_ref(),
+        )
+        .await?;
+        request.name = backup::stored_name(&request.name, &digest);
+        let result = upload::upload(&connected, self.db(), request, stream).await?;
+        // Empty after a seek-resume, where the engine can't hash the whole file.
+        if !result.sha256_hex.is_empty() && result.sha256_hex != digest {
+            // The zip was still being written: what landed isn't what was hashed.
+            self.delete_if_exists(&result.id).await?;
+            return Err(StorageError::ChecksumMismatch {
+                expected: digest,
+                actual: result.sha256_hex,
+            });
+        }
+        Ok(result)
     }
 
     /// Upload a server-local file. Sets `total_size_bytes` from
@@ -244,7 +260,11 @@ impl TelegramStorage {
             let connected = self.connected_client().await?;
             connected.reconcile_chat_index(self.db()).await?;
         }
-        if let Some(existing) = index_db::find_by_name(self.db(), &request.name).await? {
+        let mut file = fs::File::open(path).await?;
+        let size = file.metadata().await?.len();
+        let digest = backup::content_sha256(&mut file, size, request.abort.as_ref()).await?;
+        let stored_name = backup::stored_name(&request.name, &digest);
+        if let Some(existing) = index_db::find_by_name(self.db(), &stored_name).await? {
             log::info!(
                 target: "tgb-telegram-storage",
                 "skip upload — already exists in tg_files: {name:?} (tg_message_id={})",

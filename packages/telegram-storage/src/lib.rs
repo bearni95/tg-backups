@@ -63,6 +63,7 @@
 pub mod access_cookie;
 pub mod api;
 pub mod auth;
+mod backup;
 pub mod client;
 pub mod config;
 pub mod db;

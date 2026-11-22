@@ -869,7 +869,9 @@ impl ConnectedClient {
                 }
             }
 
-            if !filter.keep_legacy_doc() {
+            // Unmarked documents count only when they are zips, so other
+            // messages in the group don't show up as backups.
+            if !filter.keep_legacy_doc() || !crate::media_type::is_allowed(&name, mime_type) {
                 continue;
             }
 

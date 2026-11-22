@@ -15,9 +15,9 @@
 //!
 //! A logical file may live across multiple Telegram messages (see
 //! [`crate::upload`] — files >1 GiB get split into ≤1 GiB chunks). The
-//! download path reads the `tg_file_part` rows ordered by `ord`,
-//! batches their messages in a single `get_messages_by_id` round-trip,
-//! and then iterates them sequentially within the requested byte
+//! download path reads the `tg_file_part` rows ordered by `ord`, checks
+//! their messages exist (100 ids per call), and then fetches and streams
+//! them one at a time within the requested byte
 //! range. Single-part files (the common case) go through the same code
 //! path with `parts.len() == 1`, so there's no separate legacy branch.
 
@@ -34,6 +34,9 @@ use crate::pool::Db;
 /// `offset` to be a multiple of `MIN_CHUNK_SIZE`, and `limit` to be a
 /// multiple of `MIN_CHUNK_SIZE` in `[MIN_CHUNK_SIZE, MAX_CHUNK_SIZE]`.
 const MAX_CHUNK_SIZE: u64 = 512 * 1024;
+
+/// Telegram's per-call cap on message ids.
+const MESSAGES_PER_CALL: usize = 100;
 
 pub struct DownloadStream {
     pub rx: mpsc::Receiver<Result<Vec<u8>, StorageError>>,
@@ -73,6 +76,11 @@ pub async fn download_range(
         return Ok(DownloadStream { rx });
     }
 
+    // A backup cut short must never restore as a shorter, valid-looking zip.
+    if !is_complete(db, row).await? {
+        return Err(StorageError::BackupIncomplete);
+    }
+
     let target = connected.target_peer().await?;
     let parts = index_db::list_parts(db, &row.id).await?;
     let parts = if parts.is_empty() {
@@ -99,32 +107,29 @@ pub async fn download_range(
     // use the resolved peer ref (real id + access hash). Cached on
     // ConnectedClient so dialog walk / get_me happens at most once.
     let msg_ids: Vec<i32> = parts.iter().map(|p| p.tg_message_id as i32).collect();
-    let msgs = connected
-        .client
-        .get_messages_by_id(target, &msg_ids)
-        .await?;
-
-    // Match messages back to parts by id. `get_messages_by_id` returns a
-    // `Vec<Option<Message>>` in the same order as the input ids, with
-    // `None` for any deleted / unreachable message; we propagate `None`
-    // as `NotFound` to mirror the single-part error contract.
-    let mut part_media: Vec<(u64, grammers_client::media::Media)> = Vec::with_capacity(parts.len());
-    for (part, msg) in parts.iter().zip(msgs.into_iter()) {
-        let msg = msg.ok_or(StorageError::NotFound)?;
-        let media = msg
-            .media()
-            .ok_or_else(|| StorageError::Internal("stored message has no media payload".into()))?;
-        part_media.push((part.size_bytes.max(0) as u64, media));
+    // Check every chunk before the response starts. grammers sends the ids
+    // in one call, so batch them: a 5 GiB backup already has over 100 chunks.
+    for batch in msg_ids.chunks(MESSAGES_PER_CALL) {
+        let msgs = connected.client.get_messages_by_id(target, batch).await?;
+        if msgs.iter().any(Option::is_none) {
+            return Err(StorageError::NotFound);
+        }
     }
 
     let client = connected.client.clone();
     tokio::spawn(async move {
-        if let Err(e) = stream_parts(client, part_media, start, length, tx.clone()).await {
+        if let Err(e) = stream_parts(client, target, parts, start, length, tx.clone()).await {
             let _ = tx.send(Err(e)).await;
         }
     });
 
     Ok(DownloadStream { rx })
+}
+
+/// Whether every byte of `row` has landed on Telegram.
+pub(crate) async fn is_complete(db: &Db, row: &FileRow) -> Result<bool, StorageError> {
+    let uploaded = index_db::list_parts_total_size(db, &row.id).await?;
+    Ok(uploaded == row.size_bytes.max(0) as u64)
 }
 
 /// Walk every part whose byte range overlaps `[start, start + length)`
@@ -133,14 +138,16 @@ pub async fn download_range(
 /// entirely past the requested range short-circuit the loop.
 async fn stream_parts(
     client: Client,
-    parts: Vec<(u64, grammers_client::media::Media)>,
+    target: grammers_session::types::PeerRef,
+    parts: Vec<FilePart>,
     start: u64,
     length: u64,
     tx: mpsc::Sender<Result<Vec<u8>, StorageError>>,
 ) -> Result<(), StorageError> {
     let mut part_offset: u64 = 0;
     let mut bytes_remaining = length;
-    for (part_size, media) in parts {
+    for part in parts {
+        let part_size = part.size_bytes.max(0) as u64;
         if bytes_remaining == 0 {
             break;
         }
@@ -169,6 +176,17 @@ async fn stream_parts(
         let mut bytes_to_drop = local_start - aligned_start;
         let mut local_remaining = local_take;
 
+        // Fetched only now: file references expire, and restoring a large
+        // backup can outlast the ones handed out when the download started.
+        let media = client
+            .get_messages_by_id(target, &[part.tg_message_id as i32])
+            .await?
+            .into_iter()
+            .next()
+            .flatten()
+            .ok_or(StorageError::NotFound)?
+            .media()
+            .ok_or_else(|| StorageError::Internal("stored message has no media payload".into()))?;
         let mut iter = client.iter_download(&media);
         if skip_count > 0 {
             iter = iter.skip_chunks(skip_count);
@@ -281,20 +299,24 @@ pub async fn delete(
     db: &Db,
     row: &FileRow,
 ) -> Result<(), StorageError> {
-    let target = connected.target_peer().await?;
     let parts = index_db::list_parts(db, &row.id).await?;
-    let mut msg_ids: Vec<i32> = parts.iter().map(|p| p.tg_message_id as i32).collect();
+    let mut msg_ids: Vec<i64> = parts.iter().map(|p| p.tg_message_id).collect();
     if msg_ids.is_empty() {
         // Defensive: legacy row with no part backfill. Use the head
         // row's message id instead so the chat-side cleanup still runs.
-        msg_ids.push(row.tg_message_id as i32);
+        msg_ids.push(row.tg_message_id);
     }
-    if let Err(e) = connected.client.delete_messages(target, &msg_ids).await {
-        log::warn!(
-            target: "tgb-telegram-storage",
-            "delete_messages({msg_ids:?}) failed, dropping index row anyway: {e}",
-        );
-    }
+    delete_message_ids(connected, &msg_ids).await?;
+    // An interrupted backup may be staged for reconcile. Left behind, those
+    // dead message ids would be fused into a re-upload of the same zip.
+    let total_chunks = (row.size_bytes.max(0) as u64).div_ceil(crate::upload::MAX_CHUNK_BYTES);
+    index_db::delete_pending_group_by_identity(
+        db,
+        &row.name,
+        row.size_bytes,
+        total_chunks.max(1) as i64,
+    )
+    .await?;
     crate::db::delete(db, &row.id).await?;
     Ok(())
 }

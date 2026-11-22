@@ -354,6 +354,9 @@ pub async fn clear_all(db: &Db) -> Result<(), StorageError> {
     sqlx::query("DELETE FROM tg_files")
         .execute(db.pool())
         .await?;
+    sqlx::query("DELETE FROM tg_pending_part")
+        .execute(db.pool())
+        .await?;
     Ok(())
 }
 
