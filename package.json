@@ -4,6 +4,9 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
+		"dev:server": "cargo run -p tgb-backend",
+		"start": "vite build && cargo run --release -p tgb-backend",
+		"test:rust": "cargo test --workspace",
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
@@ -18,7 +21,8 @@
 	},
 	"dependencies": {
 		"@sveltejs/adapter-static": "^3.0.9",
-		"classnames": "^2.5.1"
+		"classnames": "^2.5.1",
+		"qrcode-generator": "^2.0.4"
 	},
 	"devDependencies": {
 		"@sveltejs/kit": "^2.22.0",

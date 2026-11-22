@@ -1,9 +1,10 @@
 import { defineConfig } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { svelteTesting } from '@testing-library/svelte/vite';
 import { resolve } from 'path';
 
 export default defineConfig({
-	plugins: [svelte({ hot: !process.env.VITEST })],
+	plugins: [svelte({ hot: !process.env.VITEST }), svelteTesting()],
 	test: {
 		globals: true,
 		environment: 'happy-dom',
@@ -21,6 +22,7 @@ export default defineConfig({
 			$services: resolve(__dirname, './src/services'),
 			$adapters: resolve(__dirname, './src/adapters'),
 			$types: resolve(__dirname, './src/types'),
+			$components: resolve(__dirname, './src/components'),
 			$utils: resolve(__dirname, './src/utils'),
 			$app: resolve(__dirname, './test/mocks/$app')
 		}
