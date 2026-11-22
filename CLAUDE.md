@@ -38,6 +38,7 @@ $data        → src/data/*
 
 - Backup groups are created and chosen in the UI, never configured through the environment.
 - The backend is TypeScript inside SvelteKit. Read `src/lib/server/telegram/CLAUDE.md` before touching it: several on-disk and on-Telegram formats must not change.
+- Every request passes `isTrustedRequest`: this machine, and the app's exact origin. Never widen it to any localhost port.
 - Route handlers only parse the request, call `src/lib/server`, and serialise the result.
 - `server.ts` and what it imports run under plain Node: relative imports with `.ts`, no aliases, erasable syntax only.
 - Server tests live in `test/server/` and start with `// @vitest-environment node`.

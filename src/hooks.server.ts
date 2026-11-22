@@ -3,7 +3,7 @@ import { building } from '$app/environment';
 import { loadDotenv } from '$lib/server/env';
 import { errorResponse } from '$lib/server/http/api';
 import { getTelegramStorage } from '$lib/server/telegram/instance';
-import { hasLocalHeaders, isLoopbackAddress } from '$utils/http/loopback';
+import { isLoopbackAddress, isTrustedRequest } from '$utils/http/loopback';
 
 export const init: ServerInit = async () => {
 	if (building) return;
@@ -12,8 +12,8 @@ export const init: ServerInit = async () => {
 };
 
 function isLocal(event: RequestEvent): boolean {
-	const { headers } = event.request;
-	if (!hasLocalHeaders(headers.get('host'), headers.get('origin'))) return false;
+	const { method, headers } = event.request;
+	if (!isTrustedRequest(method, event.url.pathname, (name) => headers.get(name))) return false;
 	try {
 		return isLoopbackAddress(event.getClientAddress());
 	} catch {

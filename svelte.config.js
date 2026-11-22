@@ -14,7 +14,7 @@ const config = {
 		// server.ts serves dist/handler.js. Zips don't compress, so neither does the app.
 		adapter: adapter({ out: 'dist', precompress: false }),
 		// Kit compares Origin with an https URL it infers, which rejects uploads over
-		// plain http. hooks.server.ts and server.ts only accept loopback origins instead.
+		// plain http. hooks.server.ts and server.ts require the app's own origin instead.
 		csrf: { trustedOrigins: ['*'] },
 		typescript: {
 			config: (tsconfig) => ({ ...tsconfig, include: [...tsconfig.include, '../server.ts'] })

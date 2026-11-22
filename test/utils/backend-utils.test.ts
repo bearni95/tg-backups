@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { parseDotenv } from '../../src/utils/env/parseDotenv';
 import { parseByteRange } from '../../src/utils/http/byteRange';
 import { attachmentDisposition, sanitiseFilename } from '../../src/utils/http/contentDisposition';
-import { hasLocalHeaders, isLoopbackAddress } from '../../src/utils/http/loopback';
+import { isLoopbackAddress, isTrustedRequest } from '../../src/utils/http/loopback';
 import {
 	asObject,
 	parseJson,
@@ -61,13 +61,18 @@ describe('contentDisposition', () => {
 });
 
 describe('loopback', () => {
+	const trusted = (host?: string | null, origin?: string | null) =>
+		isTrustedRequest('POST', '/api', (name) =>
+			name === 'host' ? host : name === 'origin' ? origin : undefined
+		);
+
 	it.each([
 		['localhost:5173', null],
-		['127.0.0.1:9811', 'http://localhost:5173'],
+		['127.0.0.1:9811', 'http://127.0.0.1:9811'],
 		['[::1]:9811', null],
 		['localhost', undefined]
 	])('accepts %s from %s', (host, origin) => {
-		expect(hasLocalHeaders(host, origin)).toBe(true);
+		expect(trusted(host, origin)).toBe(true);
 	});
 
 	it.each([
@@ -81,7 +86,7 @@ describe('loopback', () => {
 		['', null],
 		[null, null]
 	])('rejects %s from %s', (host, origin) => {
-		expect(hasLocalHeaders(host, origin)).toBe(false);
+		expect(trusted(host, origin)).toBe(false);
 	});
 
 	it('knows loopback addresses', () => {

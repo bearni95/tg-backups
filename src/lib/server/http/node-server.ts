@@ -1,6 +1,6 @@
 // Used by server.ts and vite.config.ts under plain Node, hence the `.ts` import.
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { hasLocalHeaders, isLoopbackAddress } from '../../../utils/http/loopback.ts';
+import { isLoopbackAddress, isTrustedRequest } from '../../../utils/http/loopback.ts';
 
 export const DEFAULT_PORT = 9811;
 
@@ -11,7 +11,7 @@ type Middleware = (request: IncomingMessage, response: ServerResponse, next: Nex
 export const localOnly: Middleware = (request, response, next) => {
 	if (
 		isLoopbackAddress(request.socket.remoteAddress) &&
-		hasLocalHeaders(request.headers.host, request.headers.origin)
+		isTrustedRequest(request.method, request.url, (name) => request.headers[name]?.toString())
 	) {
 		return next();
 	}

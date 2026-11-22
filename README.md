@@ -29,5 +29,5 @@ Start the built app with `pnpm start` or `node server.ts`, not `node dist`, whic
 - The stored name carries a content fingerprint (`db.tgb-<hash>.zip`), so versions with the same name never mix. The app shows and restores the original name.
 - An interrupted backup is listed as incomplete. Upload the same zip again to resume it.
 - Backups uploaded by another machine appear after a backend restart, because the group is scanned once per connection.
-- The backend only accepts requests from localhost.
+- The backend only accepts requests from localhost, and in a browser only from the app's own page: other localhost ports are refused.
 - Everything on disk is in `~/tg-backups` (`TGB_DATA_DIR` changes it). The Telegram session is in there, so treat it as a secret.

@@ -112,7 +112,8 @@ describe('hooks', () => {
 
 	it('only answers this machine', async () => {
 		expect(await run('localhost:9811', '127.0.0.1')).toBe(200);
-		expect(await run('localhost:9811', '::1', 'http://localhost:5173')).toBe(200);
+		expect(await run('localhost:9811', '::1', 'http://localhost:9811')).toBe(200);
+		expect(await run('localhost:9811', '::1', 'http://localhost:5173')).toBe(403);
 		expect(await run('evil.example', '127.0.0.1')).toBe(403);
 		expect(await run('localhost:9811', '192.168.1.5')).toBe(403);
 		expect(await run('localhost:9811', '127.0.0.1', 'https://evil.example')).toBe(403);
