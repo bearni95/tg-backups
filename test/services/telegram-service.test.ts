@@ -238,7 +238,7 @@ describe('telegramService', () => {
 				.mockResolvedValueOnce(okJson({ files: [] }));
 			vi.stubGlobal('fetch', fetchMock);
 			const out = await telegramService.submitCode('123');
-			expect(out.outcome).toBe('authenticated');
+			expect(out?.outcome).toBe('authenticated');
 			expect(fetchMock).toHaveBeenCalledTimes(3);
 		});
 
@@ -249,7 +249,7 @@ describe('telegramService', () => {
 				.mockResolvedValueOnce(okJson({ state: 'ok' }));
 			vi.stubGlobal('fetch', fetchMock);
 			const out = await telegramService.submitCode('123');
-			expect(out.outcome).toBe('password_required');
+			expect(out?.outcome).toBe('password_required');
 			expect(fetchMock).toHaveBeenCalledTimes(2);
 		});
 
@@ -261,7 +261,7 @@ describe('telegramService', () => {
 				.mockResolvedValueOnce(okJson({ files: [] }));
 			vi.stubGlobal('fetch', fetchMock);
 			const out = await telegramService.submitPassword('pw');
-			expect(out.outcome).toBe('authenticated');
+			expect(out?.outcome).toBe('authenticated');
 			expect(fetchMock).toHaveBeenCalledTimes(3);
 		});
 
@@ -272,8 +272,20 @@ describe('telegramService', () => {
 				.mockResolvedValueOnce(okJson({ state: 'ok' }));
 			vi.stubGlobal('fetch', fetchMock);
 			const out = await telegramService.submitPassword('pw');
-			expect(out.outcome).toBe('failed');
+			expect(out?.outcome).toBe('failed');
 			expect(fetchMock).toHaveBeenCalledTimes(2);
+		});
+
+		it('submitPassword surfaces a wrong password', async () => {
+			const fetchMock = vi
+				.fn()
+				.mockResolvedValueOnce(
+					errJson(400, { error: 'invalid password', code: 'invalid_password' })
+				)
+				.mockResolvedValueOnce(okJson({ state: 'ok' }));
+			vi.stubGlobal('fetch', fetchMock);
+			expect(await telegramService.submitPassword('nope')).toBeNull();
+			expect(get(telegramService.lastError)).toBe('invalid password');
 		});
 
 		it('logout clears files and refreshes status', async () => {

@@ -175,13 +175,11 @@ async function completeLogin(
 	return user;
 }
 
-export async function submitPassword(
-	connection: Connection,
-	password: tl.account.RawPassword,
-	input: string
-): Promise<tl.TypeUser> {
+export async function submitPassword(connection: Connection, input: string): Promise<tl.TypeUser> {
 	let authorization: tl.auth.TypeAuthorization;
 	try {
+		// Fresh each time: an SRP challenge works once.
+		const password = await connection.invoke({ _: 'account.getPassword' });
 		const srp = await connection.transport.computeSrp(password, input);
 		authorization = await connection.invoke({ _: 'auth.checkPassword', password: srp });
 	} catch (error) {
@@ -192,4 +190,9 @@ export async function submitPassword(
 		throw StorageError.telegram('sign up with the official Telegram app required');
 	}
 	return completeLogin(connection, authorization);
+}
+
+/** Whether Telegram ended the login, leaving nothing to retry the password on. */
+export function loginExpired(error: unknown): boolean {
+	return InvocationError.is(error) && (error.code === 401 || error.matches('AUTH_RESTART'));
 }

@@ -29,6 +29,8 @@ export interface TelegramSource {
 	qrLoginStep(): Promise<TelegramQrStep>;
 	submitCode(code: string): Promise<TelegramAuthOutcome>;
 	submitPassword(password: string): Promise<TelegramAuthOutcome>;
+	/** Drop a half-finished login. */
+	restartLogin(): Promise<void>;
 	logout(): Promise<void>;
 	/** Creates a Telegram group and selects it. */
 	createGroup(title: string): Promise<TelegramGroup>;

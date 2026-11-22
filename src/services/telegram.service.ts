@@ -195,22 +195,25 @@ class TelegramService {
 		await this.refreshStatus();
 	}
 
-	async submitCode(code: string): Promise<TelegramAuthOutcome> {
-		const outcome = await telegramSource.submitCode(code);
-		await this.refreshStatus();
-		if (outcome.outcome === 'authenticated') {
-			await this.refreshFiles();
-		}
-		return outcome;
+	/// Like `startAuth`, a failure lands in `lastError`: these used to reject into
+	/// the void, so a wrong code or password showed nothing.
+	async submitCode(code: string): Promise<TelegramAuthOutcome | null> {
+		return this.submitLoginStep(() => telegramSource.submitCode(code));
 	}
 
-	async submitPassword(password: string): Promise<TelegramAuthOutcome> {
-		const outcome = await telegramSource.submitPassword(password);
-		await this.refreshStatus();
-		if (outcome.outcome === 'authenticated') {
-			await this.refreshFiles();
+	async submitPassword(password: string): Promise<TelegramAuthOutcome | null> {
+		return this.submitLoginStep(() => telegramSource.submitPassword(password));
+	}
+
+	/// The way out of the password step when the password is forgotten.
+	async restartLogin(): Promise<void> {
+		this.clearError();
+		try {
+			await telegramSource.restartLogin();
+		} catch (err) {
+			this.handleError(err);
 		}
-		return outcome;
+		await this.refreshStatus();
 	}
 
 	async logout(): Promise<void> {
@@ -388,6 +391,21 @@ class TelegramService {
 				this.uploadsPollTimer = null;
 			}
 		};
+	}
+
+	private async submitLoginStep(
+		submit: () => Promise<TelegramAuthOutcome>
+	): Promise<TelegramAuthOutcome | null> {
+		this.clearError();
+		let outcome: TelegramAuthOutcome | null = null;
+		try {
+			outcome = await submit();
+		} catch (err) {
+			this.handleError(err);
+		}
+		await this.refreshStatus();
+		if (outcome?.outcome === 'authenticated') await this.refreshFiles();
+		return outcome;
 	}
 
 	private activeGroupId(): string | null {

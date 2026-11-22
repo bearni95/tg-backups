@@ -117,15 +117,16 @@ describe('password login on the real client', () => {
 			firstName: 'T'
 		};
 		const call = answer(
+			password,
 			{ _: 'auth.authorization', user },
 			{ _: 'updates.state', pts: 10, qts: 2, date: 30, seq: 4, unreadCount: 0 }
 		);
 
 		await client.prepare();
 		const connection = new Connection(transport, session, 12345, 'hash');
-		expect(await submitPassword(connection, password, 'secret')).toEqual(user);
+		expect(await submitPassword(connection, 'secret')).toEqual(user);
 
-		const sent = call.mock.calls[0][0] as unknown as tl.auth.RawCheckPasswordRequest;
+		const sent = call.mock.calls[1][0] as unknown as tl.auth.RawCheckPasswordRequest;
 		expect(sent.password).toMatchObject({ _: 'inputCheckPasswordSRP', srpId: Long.ONE });
 		expect(readFileSync(join(root, 'session.sqlite'), 'utf8')).toContain('"is_self":true');
 	});

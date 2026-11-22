@@ -114,6 +114,21 @@ export class TelegramStorage {
 		});
 	}
 
+	/** The way out of a login that can't be finished, like a forgotten 2FA password. */
+	async restartLogin(): Promise<void> {
+		await this.lifecycle.run(async () => {
+			if ((await this.login.progress()).stage === null) throw StorageError.noLoginInProgress();
+			// A login that did get through keeps its session.
+			if (await this.connection?.isAuthorized().catch(() => false)) {
+				await this.login.reset();
+				return;
+			}
+			await this.disconnect();
+			await this.wipeSession();
+			this.tryConnect('login restart');
+		});
+	}
+
 	async logout(): Promise<void> {
 		await this.lifecycle.run(async () => {
 			try {

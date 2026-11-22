@@ -13,7 +13,8 @@
 		onStartQr,
 		onCancelQr,
 		onSubmitCode,
-		onSubmitPassword
+		onSubmitPassword,
+		onRestart
 	}: {
 		stage: TelegramLoginStage | null;
 		delivery?: TelegramCodeDelivery | null;
@@ -26,6 +27,7 @@
 		onCancelQr?: () => void;
 		onSubmitCode: (code: string) => void;
 		onSubmitPassword: (password: string) => void;
+		onRestart?: () => void;
 	} = $props();
 
 	let phone = $state('');
@@ -126,5 +128,10 @@
 				{busy ? 'Verifying…' : 'Sign in'}
 			</button>
 		</form>
+		{#if onRestart}
+			<button type="button" class="btn btn-ghost btn-sm" onclick={onRestart} disabled={busy}>
+				Start over
+			</button>
+		{/if}
 	{/if}
 </div>

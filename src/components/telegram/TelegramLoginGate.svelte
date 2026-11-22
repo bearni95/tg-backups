@@ -104,6 +104,15 @@
 		}
 	}
 
+	async function handleRestartLogin() {
+		busy = true;
+		try {
+			await telegramService.restartLogin();
+		} finally {
+			busy = false;
+		}
+	}
+
 	async function handleClearCredentials() {
 		busy = true;
 		try {
@@ -190,6 +199,7 @@
 									onResend={handleResendCode}
 									onSubmitCode={handleSubmitCode}
 									onSubmitPassword={handleSubmitPassword}
+									onRestart={handleRestartLogin}
 								/>
 							</fieldset>
 						</div>

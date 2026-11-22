@@ -68,6 +68,10 @@ export class ApiTelegramSource implements TelegramSource {
 		});
 	}
 
+	async restartLogin(): Promise<void> {
+		await jsonFetch<unknown>('/api/telegram/auth/restart', { method: 'POST' });
+	}
+
 	async logout(): Promise<void> {
 		await jsonFetch<unknown>('/api/telegram/auth/logout', { method: 'POST' });
 	}

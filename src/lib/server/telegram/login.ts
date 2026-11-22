@@ -1,4 +1,3 @@
-import type { tl } from '@mtcute/node';
 import { log } from '$lib/server/logger';
 import { Semaphore } from '$lib/server/sync';
 import { telegramAuthAdapter } from '$adapters/classes/telegram-auth.adapter';
@@ -14,7 +13,7 @@ import { StorageError } from './errors';
 
 type InProgress =
 	| { stage: 'code'; request: auth.CodeRequest; delivery: TelegramCodeDelivery }
-	| { stage: 'password'; password: tl.account.RawPassword };
+	| { stage: 'password' };
 
 /** The login wizard's state. One login at a time. */
 export class LoginFlow {
@@ -78,16 +77,19 @@ export class LoginFlow {
 		return this.lock.run(() => this.finish(step));
 	}
 
-	async submitPassword(input: string): Promise<TelegramAuthOutcome> {
-		const password = await this.lock.run(() => {
+	submitPassword(input: string): Promise<TelegramAuthOutcome> {
+		return this.lock.run(async () => {
 			if (this.state?.stage !== 'password') throw StorageError.noLoginInProgress();
-			const pending = this.state.password;
-			// An SRP challenge is single-use.
-			this.state = null;
-			return pending;
+			try {
+				const user = await auth.submitPassword(this.connection(), input);
+				this.state = null;
+				return { outcome: 'authenticated', user: telegramAuthAdapter.userFromTl(user) };
+			} catch (error) {
+				// A wrong password or a flood wait can be retried. An ended login can't.
+				if (auth.loginExpired(error)) this.state = null;
+				throw error;
+			}
 		});
-		const user = await auth.submitPassword(this.connection(), password, input);
-		return { outcome: 'authenticated', user: telegramAuthAdapter.userFromTl(user) };
 	}
 
 	private finish(step: auth.SignInStep): TelegramAuthOutcome {
@@ -95,7 +97,7 @@ export class LoginFlow {
 			this.state = null;
 			return { outcome: 'authenticated', user: telegramAuthAdapter.userFromTl(step.user) };
 		}
-		this.state = { stage: 'password', password: step.password };
+		this.state = { stage: 'password' };
 		return { outcome: 'passwordRequired', hint: step.password.hint ?? null };
 	}
 }
