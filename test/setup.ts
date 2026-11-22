@@ -33,7 +33,10 @@ global.console = {
 	error: vi.fn()
 };
 
-Object.defineProperty(window, 'localStorage', {
+// globalThis, so this also runs in the server tests' node environment.
+Object.defineProperty(globalThis, 'localStorage', {
+	configurable: true,
+	writable: true,
 	value: localStorageMock
 });
 

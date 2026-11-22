@@ -1,6 +1,6 @@
 export type TelegramLoginStage = 'awaiting_code' | 'awaiting_password';
 
-/** How Telegram delivered a login code (backend `auth::CodeDelivery.method`). */
+/** How Telegram delivered a login code (see telegram-auth.adapter.ts). */
 export type TelegramCodeMethod =
 	| 'app'
 	| 'sms'

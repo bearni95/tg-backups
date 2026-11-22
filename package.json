@@ -1,12 +1,13 @@
 {
 	"name": "tg-backups",
-	"version": "0.0.1",
+	"version": "0.1.0",
 	"type": "module",
+	"engines": {
+		"node": ">=24"
+	},
 	"scripts": {
 		"dev": "vite dev",
-		"dev:server": "cargo run -p tgb-backend",
-		"start": "vite build && cargo run --release -p tgb-backend",
-		"test:rust": "cargo test --workspace",
+		"start": "vite build && node server.ts",
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
@@ -20,16 +21,20 @@
 		"clean": "rm -rf dist .svelte-kit"
 	},
 	"dependencies": {
-		"@sveltejs/adapter-static": "^3.0.9",
+		"@mtcute/node": "0.32.8",
 		"classnames": "^2.5.1",
+		"mime": "^4.1.2",
 		"qrcode-generator": "^2.0.4"
 	},
 	"devDependencies": {
+		"@mtcute/tl-runtime": "^0.32.6",
+		"@sveltejs/adapter-node": "^5.5.8",
 		"@sveltejs/kit": "^2.22.0",
 		"@sveltejs/vite-plugin-svelte": "^6.0.0",
 		"@tailwindcss/vite": "^4.0.0",
 		"@testing-library/jest-dom": "^6.9.1",
 		"@testing-library/svelte": "^5.2.8",
+		"@types/node": "^24.19.2",
 		"@vitest/coverage-v8": "^4.0.6",
 		"@vitest/ui": "^4.0.6",
 		"daisyui": "^5.0.50",

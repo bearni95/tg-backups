@@ -8,7 +8,7 @@ import type {
 } from '$types/telegram.type';
 import { jsonFetch, type StartUploadInput, type TelegramSource } from './telegram-source';
 
-/** The Rust backend (`packages/backend`) over `/api/telegram/*`. */
+/** The SvelteKit backend (`src/routes/api/telegram`) over `/api/telegram/*`. */
 export class ApiTelegramSource implements TelegramSource {
 	getStatus(): Promise<TelegramStatus> {
 		return jsonFetch<TelegramStatus>('/api/telegram/status');

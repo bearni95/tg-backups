@@ -20,7 +20,7 @@ const STATUS_POLL_MS = 5000;
 const UPLOADS_POLL_MS = 1000;
 const QR_POLL_MS = 3000;
 
-// Mirrors the backend bypass-cookie lifetime (`access_cookie::TTL_SECS`).
+// Mirrors the backend bypass-cookie lifetime (`TTL_SECONDS` in access-cookie.ts).
 // We persist a local "authorized until" hint so a reload within the window
 // opens the UI instantly instead of flashing the gate while the first
 // cookie-backed /status poll round-trips. The backend cookie remains the
