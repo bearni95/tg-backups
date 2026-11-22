@@ -40,7 +40,7 @@ export class FakeTelegram {
 	authorized = true;
 	member = true;
 	premigrateDc: number | null = null;
-	mainTitle = 'tgb';
+	mainTitle = 'TGB-main';
 	/** What Telegram reports per group id. */
 	settings = new Map<number, { hidden: boolean; ttl: number }>();
 	rooms = new Map<number, Room>();

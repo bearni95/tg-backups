@@ -3,6 +3,7 @@ import { Long, type tl } from '@mtcute/node';
 import { log } from '$lib/server/logger';
 import { telegramGroupAdapter } from '$adapters/classes/telegram-group.adapter';
 import { telegramPeerAdapter } from '$adapters/classes/telegram-peer.adapter';
+import { hasGroupPrefix } from '$utils/telegram/groupTitle';
 import type { GroupDetails, PeerRef, SavedGroup } from '$types/telegram-server.type';
 import type { Connection } from './connection';
 import { StorageError } from './errors';
@@ -88,13 +89,13 @@ export async function configureNewGroup(connection: Connection, peer: PeerRef): 
 	);
 }
 
-/** Groups and channels the account can post files in, archived ones included. */
+/** Prefixed groups and channels the account can post files in, archived ones included. */
 export async function listCandidateGroups(connection: Connection): Promise<SavedGroup[]> {
 	const found = new Map<string, SavedGroup>();
 	for (const folderId of [MAIN_FOLDER, ARCHIVE_FOLDER]) {
 		for await (const chat of iterateDialogChats(connection, folderId)) {
 			const group = telegramGroupAdapter.fromChat(chat);
-			if (group) found.set(group.id, group);
+			if (group && hasGroupPrefix(group.title)) found.set(group.id, group);
 		}
 	}
 	return [...found.values()].sort((a, b) => a.title.localeCompare(b.title));

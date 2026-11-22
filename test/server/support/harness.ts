@@ -46,7 +46,7 @@ export function useBackend() {
 		const kind = telegram.basicGroup ? 'chat' : 'channel';
 		const id = `${kind}-${CHANNEL_ID}`;
 		const accessHash = telegram.basicGroup ? '0' : '8123456789012345678';
-		const account = { activeGroupId: id, groups: [{ id, title: 'tgb', accessHash }] };
+		const account = { activeGroupId: id, groups: [{ id, title: 'TGB-main', accessHash }] };
 		mkdirSync(telegramDir(dataRoot), { recursive: true });
 		writeFileSync(groupsPath(dataRoot), JSON.stringify({ v: 1, accounts: { [USER_ID]: account } }));
 		return withoutGroup(dataRoot);

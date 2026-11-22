@@ -4,6 +4,7 @@ import { Long } from '@mtcute/node';
 import { describeError, log } from '$lib/server/logger';
 import { Semaphore } from '$lib/server/sync';
 import { telegramGroupAdapter } from '$adapters/classes/telegram-group.adapter';
+import { GROUP_PREFIX, groupName } from '$utils/telegram/groupTitle';
 import type { TelegramGroup, TelegramGroupInfo } from '$types/telegram.type';
 import type { SavedGroup } from '$types/telegram-server.type';
 import { BackupGroup } from './backup-group';
@@ -41,10 +42,13 @@ export class Groups {
 	}
 
 	async create(rawTitle: string): Promise<TelegramGroup> {
-		const title = rawTitle.trim();
-		if (title === '') throw StorageError.badRequest('group name is required');
+		const name = groupName(rawTitle);
+		if (name === '') throw StorageError.badRequest('group name is required');
+		const title = `${GROUP_PREFIX}${name}`;
 		if ([...title].length > MAX_TITLE_LENGTH) {
-			throw StorageError.badRequest(`group name is longer than ${MAX_TITLE_LENGTH} characters`);
+			throw StorageError.badRequest(
+				`group name is longer than ${MAX_TITLE_LENGTH} characters, ${GROUP_PREFIX} included`
+			);
 		}
 
 		return this.creating.run(async () => {
@@ -64,7 +68,7 @@ export class Groups {
 		return groups.map((group) => telegramGroupAdapter.toApi(group));
 	}
 
-	/** One already in use, or any from {@link available}. */
+	/** One already in use, whatever its title, or any from {@link available}. */
 	async select(id: string): Promise<TelegramGroup> {
 		const connection = this.connection();
 		const userId = await connection.account();

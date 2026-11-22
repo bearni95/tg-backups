@@ -40,6 +40,7 @@ Existing installs and existing groups depend on these.
 - mtcute's middlewares stay off. Retry policy is `autoRetryDelayMs`, plus the part budget in `upload.ts`.
 - Groups come from the UI, never the environment. Without one, storage fails closed (409 `group_required`): no Saved Messages.
 - Operations take a `BackupGroup` and keep it. Never read the selected group halfway through one.
+- Created and newly selected groups have titles starting with `TGB-`, case-sensitive. Groups already in `groups.json` keep working without it, or their backups would be out of reach.
 - Never share an index between groups or accounts: message ids repeat, so restores would return the wrong bytes.
 - `channels.createChannel` is never retried automatically: that makes a second group.
 - `delete-all` only works on a group named in a JSON body.

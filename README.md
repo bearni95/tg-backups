@@ -7,7 +7,7 @@ Create and restore zip backups using Telegram groups as storage.
 1. With Node 24 or later, `pnpm install`
 2. Start the app (below) and enter an API id and hash from https://my.telegram.org/apps. They can also go in `.env` (`cp .env.example .env`).
 3. Sign in with Telegram. Creating a group needs an account: the id and hash only identify the app.
-4. Create a group in the app, or choose one the account is already in.
+4. Create a group in the app, or choose one the account is already in. Backup group names start with `TGB-`, in capitals: the app adds it to the groups it creates, and only offers existing groups that have it.
 
 ## Run
 
@@ -23,7 +23,7 @@ Start the built app with `pnpm start` or `node server.ts`, not `node dist`, whic
 
 - Backups live in Telegram groups that you create or choose in the app. You can have several and switch between them; an upload stays with the group it started in.
 - Created groups are private, with history visible to new members and auto-delete off. Use Share to invite someone: every member can see and delete the backups.
-- Groups are remembered per account. On another machine, sign in and pick the group under "Use an existing group".
+- Groups are remembered per account. On another machine, sign in and pick the group under "Use an existing group". A group without the `TGB-` prefix stays usable where it was already added, but has to be renamed in Telegram before it can be picked anywhere else.
 - Zips are split into 50 MiB MTProto chunks with metadata captions, up to 200 GiB per zip.
 - Small zips can be picked in the browser. For large ones, put the zip in `~/tg-backups` and back it up by path to get background upload, pause and progress.
 - Backing up a folder follows links only inside `~/tg-backups`, and never takes the app's own `telegram` folder.

@@ -51,11 +51,11 @@ describe('creating a group', () => {
 		const id = await create(storage, '  My backups  ');
 		expect(backend.telegram.requests('channels.createChannel')[0]).toMatchObject({
 			megagroup: true,
-			title: 'My backups'
+			title: 'TGB-My backups'
 		});
 		expect(await status(storage)).toMatchObject({
 			activeGroupId: id,
-			groups: [{ id, title: 'My backups' }]
+			groups: [{ id, title: 'TGB-My backups' }]
 		});
 		await put(storage, id, 'bytes');
 		expect(await list(storage, id)).toHaveLength(1);
@@ -67,7 +67,7 @@ describe('creating a group', () => {
 		const info = await (await call(storage, 'GET', `${API}/groups/${id}`)).json();
 		expect(info).toEqual({
 			id,
-			title: 'Safe',
+			title: 'TGB-Safe',
 			invite: `https://t.me/+invite${id.split('-')[1]}`,
 			autoDeleteSeconds: null,
 			historyHidden: false
@@ -116,16 +116,30 @@ describe('creating a group', () => {
 		expect((await response.json()).error).toContain('too many groups');
 	});
 
-	it.each(['', '   ', 'x'.repeat(129)])('rejects the name "%s"', async (title) => {
-		const response = await call(await backend.withoutGroup(), 'POST', `${API}/groups`, {
-			json: { title }
-		});
-		expect(response.status).toBe(400);
-		expect(backend.telegram.count('channels.createChannel')).toBe(0);
+	it.each([
+		['Photos', 'TGB-Photos'],
+		['TGB-Photos', 'TGB-Photos'],
+		[' TGB- Photos ', 'TGB-Photos'],
+		['tgb-Photos', 'TGB-tgb-Photos'],
+		['TGB-TGB-Photos', 'TGB-TGB-Photos']
+	])('names "%s" as "%s"', async (given, title) => {
+		await create(await backend.withoutGroup(), given);
+		expect(backend.telegram.requests('channels.createChannel')[0]).toMatchObject({ title });
 	});
 
+	it.each(['', '   ', 'TGB-', ' TGB-  ', 'x'.repeat(125), `TGB-${'x'.repeat(125)}`])(
+		'rejects the name "%s"',
+		async (title) => {
+			const response = await call(await backend.withoutGroup(), 'POST', `${API}/groups`, {
+				json: { title }
+			});
+			expect(response.status).toBe(400);
+			expect(backend.telegram.count('channels.createChannel')).toBe(0);
+		}
+	);
+
 	it('counts characters, not UTF-16 units', async () => {
-		await create(await backend.withoutGroup(), '🎉'.repeat(128));
+		await create(await backend.withoutGroup(), '🎉'.repeat(124));
 	});
 
 	it('needs a sign-in', async () => {
@@ -150,12 +164,31 @@ describe('creating a group', () => {
 describe('using an existing group', () => {
 	it('lists what the account can store in, archived and far down included', async () => {
 		backend.telegram.dialogsBefore = 230;
-		backend.telegram.addGroup('Archived', { archived: true });
-		backend.telegram.addGroup('Read only', { megagroup: false, broadcast: true });
-		backend.telegram.addGroup('Left', { left: true });
+		backend.telegram.addGroup('TGB-Archived', { archived: true });
+		backend.telegram.addGroup('TGB-Read only', { megagroup: false, broadcast: true });
+		backend.telegram.addGroup('TGB-Left', { left: true });
 		const storage = await backend.withoutGroup();
 		const { groups } = await (await call(storage, 'GET', `${API}/groups/available`)).json();
-		expect(groups.map((group: { title: string }) => group.title)).toEqual(['Archived', 'tgb']);
+		expect(groups.map((group: { title: string }) => group.title)).toEqual([
+			'TGB-Archived',
+			'TGB-main'
+		]);
+	});
+
+	it.each(['Family', 'tgb-lower', 'Tgb-mixed', 'TGB_underscore', ' TGB-space', 'My TGB-group'])(
+		'neither offers nor accepts "%s"',
+		async (title) => {
+			const id = `channel-${backend.telegram.addGroup(title)}`;
+			const storage = await backend.withoutGroup();
+			const { groups } = await (await call(storage, 'GET', `${API}/groups/available`)).json();
+			expect(groups).toEqual([{ id: MAIN, title: 'TGB-main' }]);
+			expect((await select(storage, id)).status).toBe(404);
+		}
+	);
+
+	it('still switches to a saved group without the prefix', async () => {
+		backend.telegram.mainTitle = 'Old backups';
+		expect((await select(await backend.signedIn(), MAIN)).status).toBe(200);
 	});
 
 	it('finds backups already in it', async () => {
@@ -246,7 +279,7 @@ describe('several groups', () => {
 			const path = join(backend.root, name);
 			writeFileSync(path, name);
 			const response = await call(storage, 'POST', `${API}/uploads`, { json: { path } });
-			expect((await response.json()).snapshot).toMatchObject({ groupId: a, groupTitle: 'A' });
+			expect((await response.json()).snapshot).toMatchObject({ groupId: a, groupTitle: 'TGB-A' });
 		}
 		await select(storage, b);
 		release();
@@ -271,7 +304,7 @@ describe('several groups', () => {
 		const restarted = await backend.withoutGroup();
 		const after = await status(restarted);
 		expect(after.activeGroupId).toBe(a);
-		expect(after.groups.map((group: { title: string }) => group.title)).toEqual(['A', 'B']);
+		expect(after.groups.map((group: { title: string }) => group.title)).toEqual(['TGB-A', 'TGB-B']);
 		expect(statSync(groupsPath(backend.root)).mode & 0o777).toBe(0o600);
 	});
 

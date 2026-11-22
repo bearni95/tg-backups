@@ -34,12 +34,12 @@ async function api(url: string, init?: RequestInit) {
 	if (url.endsWith('/status')) return json(status());
 	if (url.endsWith('/uploads')) return json({ uploads: [] });
 	if (url.endsWith('/groups/available'))
-		return json({ groups: [{ id: 'channel-9', title: 'Family' }] });
+		return json({ groups: [{ id: 'channel-9', title: 'TGB-Family' }] });
 	if (url.endsWith('/groups/select')) {
 		if (failSelect) return json({ error: 'no access', code: 'group_unavailable' }, 409);
 		let group = groups.find((known) => known.id === body.id);
 		if (!group) {
-			group = { id: body.id, title: 'Family' };
+			group = { id: body.id, title: 'TGB-Family' };
 			groups.push(group);
 		}
 		active = group.id;
@@ -111,12 +111,13 @@ describe('groups on the page', () => {
 		const view = open();
 		const button = view.getByRole('button', { name: 'Create group' }) as HTMLButtonElement;
 		expect(button.disabled).toBe(true);
+		expect(view.getByText('TGB-', { exact: true })).toBeInTheDocument();
 		await fireEvent.input(view.getByLabelText('Group name'), { target: { value: ' My backups ' } });
 		await fireEvent.click(button);
 
 		await waitFor(() => expect(view.getByText('channel-5.zip')).toBeInTheDocument());
 		expect(requests.find((request) => request.url.endsWith('/groups'))?.body).toEqual({
-			title: 'My backups'
+			title: 'TGB-My backups'
 		});
 		expect(view.getByText('New backup')).toBeInTheDocument();
 		expect(view.queryByText('Where should backups be stored?')).toBeNull();

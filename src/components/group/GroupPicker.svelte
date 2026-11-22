@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { GROUP_PREFIX } from '$utils/telegram/groupTitle';
 	import type { TelegramGroup } from '$types/telegram.type';
 
 	let {
@@ -31,7 +32,10 @@
 			{loading ? 'Reading your groups…' : 'Show my groups'}
 		</button>
 	{:else if groups.length === 0}
-		<p class="text-sm opacity-70">This account has no other group it can send files to.</p>
+		<p class="text-sm opacity-70">
+			No group this account can send files to has a name starting with {GROUP_PREFIX} (in capitals).
+			Create one, or rename one in Telegram and reload this page.
+		</p>
 	{:else}
 		<form class="flex gap-2" onsubmit={submit}>
 			<select
@@ -47,6 +51,9 @@
 			</select>
 			<button class="btn" type="submit" disabled={busy || !chosen}>Use group</button>
 		</form>
-		<p class="text-xs opacity-70">Everyone in that group can see and delete the backups.</p>
+		<p class="text-xs opacity-70">
+			Only groups starting with {GROUP_PREFIX} are listed. Everyone in that group can see and delete
+			the backups.
+		</p>
 	{/if}
 </div>
