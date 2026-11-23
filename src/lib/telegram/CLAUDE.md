@@ -12,7 +12,7 @@ The backup engine: zips stored in Telegram groups over MTProto, with one SQLite 
 | `groups.ts`, `group-registry.ts`    | Create, select and open groups, and `groups.json`                    |
 | `group-admin.ts`                    | The Telegram calls behind that                                       |
 | `backup-group.ts`                   | `BackupGroup`: peer, index and files of one group                    |
-| `auth.ts`, `login.ts`               | Code, QR and 2FA login, and the wizard's state                       |
+| `auth.ts`, `login.ts`               | Code, QR and 2FA login, and the state of one under way               |
 | `status.ts`                         | What `tgb status` shows                                              |
 | `upload.ts`, `uploads.ts`           | Chunked resumable upload, and the background queue (one at a time)   |
 | `download.ts`, `restore.ts`         | Range restore from Telegram, and writing it to a file                |

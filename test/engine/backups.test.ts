@@ -471,19 +471,19 @@ describe('rebuilding the index', () => {
 		const first = backend.telegram.addDocument('p1', pattern(6), {
 			caption: chunkCaption(0, 2, 10)
 		});
-		expect(await walkAndMint(storage, { kind: 'all' })).toEqual([]);
+		expect(await walkAndMint(storage)).toEqual([]);
 		expect(storage.db.loadPendingChunks()).toHaveLength(1);
 
 		backend.telegram.remove(first);
 		backend.telegram.addDocument('p2', pattern(4), { caption: chunkCaption(1, 2, 10) });
-		expect(await walkAndMint(storage, { kind: 'all' })).toHaveLength(1);
+		expect(await walkAndMint(storage)).toHaveLength(1);
 		expect(storage.db.loadPendingChunks()).toEqual([]);
 	});
 
 	it('keeps a healthy row', async () => {
 		const storage = await backend.group();
 		const { id } = await upload(storage, pattern(10));
-		expect(await walkAndMint(storage, { kind: 'all' })).toEqual([]);
+		expect(await walkAndMint(storage)).toEqual([]);
 		expect(storage.db.list().map((row) => row.id)).toEqual([id]);
 	});
 
@@ -494,7 +494,7 @@ describe('rebuilding the index', () => {
 		const storage = await backend.group();
 		expect(await reconcileIndex(storage)).toBe(1);
 		expect(storage.db.list()[0].name).toBe('manual.zip');
-		expect(await walkAndMint(storage, { kind: 'all' })).toEqual([]);
+		expect(await walkAndMint(storage)).toEqual([]);
 	});
 
 	it('pages through a long history', async () => {
@@ -514,16 +514,6 @@ describe('rebuilding the index', () => {
 		await storage.close();
 		await reconcileIndex(await backend.group());
 		expect(backend.telegram.count('messages.getHistory')).toBe(2);
-	});
-
-	it('filters the targeted walks', async () => {
-		backend.telegram.addDocument('p', pattern(4), {
-			caption: chunkCaption(0, 1, 4, { pipelineId: 'p', role: 'media' })
-		});
-		const storage = await backend.group();
-		expect(await walkAndMint(storage, { kind: 'metadata' })).toEqual([]);
-		expect(await walkAndMint(storage, { kind: 'pipeline', id: 'q' })).toEqual([]);
-		expect(await walkAndMint(storage, { kind: 'pipeline', id: 'p' })).toHaveLength(1);
 	});
 });
 

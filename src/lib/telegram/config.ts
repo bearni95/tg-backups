@@ -4,7 +4,7 @@ import { EMBEDDED_API_HASH, EMBEDDED_API_ID } from '$lib/build-info';
 import { log } from '$lib/logger';
 import { asObject, parseJson } from '$utils/json/losslessJson';
 import type { TelegramCredentials } from '$types/telegram.type';
-import type { StoredCredentials } from '$types/telegram-server.type';
+import type { StoredCredentials } from '$types/telegram-engine.type';
 import { StorageError } from './errors';
 import { credentialsPath } from './paths';
 

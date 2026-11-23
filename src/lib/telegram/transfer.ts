@@ -8,7 +8,7 @@ import type { TransferImport } from './storage';
 type Fields = Record<string, unknown>;
 
 function wrongShape(reason: string): StorageError {
-	return StorageError.badRequest(reason, 422);
+	return StorageError.badRequest(reason);
 }
 
 function optionalString(fields: Fields, key: string): string | undefined {

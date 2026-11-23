@@ -4,7 +4,7 @@ import { log } from '$lib/logger';
 import { telegramGroupAdapter } from '$adapters/classes/telegram-group.adapter';
 import { telegramPeerAdapter } from '$adapters/classes/telegram-peer.adapter';
 import { hasGroupPrefix } from '$utils/telegram/groupTitle';
-import type { GroupDetails, PeerRef, SavedGroup } from '$types/telegram-server.type';
+import type { GroupDetails, PeerRef, SavedGroup } from '$types/telegram-engine.type';
 import type { Connection } from './connection';
 import { StorageError } from './errors';
 import { isRpc } from './invocation-error';

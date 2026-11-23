@@ -2,7 +2,7 @@ import { AdapterClass } from '$adapters/classes/adapter.class';
 import { parseJson } from '$utils/json/losslessJson';
 import { originalName } from '$utils/telegram/backupName';
 import type { TelegramFile } from '$types/telegram.type';
-import type { FileRow } from '$types/telegram-server.type';
+import type { FileRow } from '$types/telegram-engine.type';
 
 export class TelegramFileAdapter extends AdapterClass {
 	constructor() {

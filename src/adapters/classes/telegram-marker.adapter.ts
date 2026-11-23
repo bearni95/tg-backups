@@ -1,6 +1,6 @@
 import { AdapterClass } from '$adapters/classes/adapter.class';
 import { asObject, parseJson, stringifyCanonical } from '$utils/json/losslessJson';
-import type { MultipartMarker } from '$types/telegram-server.type';
+import type { MultipartMarker } from '$types/telegram-engine.type';
 
 // Keep the schema stable: it is what is already written in the group.
 const KIND = 'tgb-multipart';

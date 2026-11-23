@@ -1,10 +1,9 @@
 import { log } from '$lib/logger';
 import { telegramFileAdapter } from '$adapters/classes/telegram-file.adapter';
-import { asObject } from '$utils/json/losslessJson';
 import type { TelegramFile } from '$types/telegram.type';
-import type { FileRow } from '$types/telegram-server.type';
+import type { FileRow } from '$types/telegram-engine.type';
 import { StorageError } from './errors';
-import { reconcileIndex, reconcileMediaForPipeline, reconcileMetadataOnly } from './reconcile';
+import { reconcileIndex } from './reconcile';
 import type { BackupGroup } from './backup-group';
 
 export function toFileEntry(group: BackupGroup, row: FileRow): TelegramFile {
@@ -18,35 +17,13 @@ export function uploadedEntry(group: BackupGroup, id: string): TelegramFile {
 }
 
 /** The backups, after the once-per-connection walk of the group. */
-export async function listFiles(group: BackupGroup, scope: string | null): Promise<TelegramFile[]> {
-	const metadataOnly = scope === 'metadata';
+export async function listFiles(group: BackupGroup): Promise<TelegramFile[]> {
 	try {
-		if (metadataOnly) await reconcileMetadataOnly(group);
-		else await reconcileIndex(group);
+		await reconcileIndex(group);
 	} catch (error) {
 		log.warn(
 			`group reconcile failed (continuing with the local index): ${StorageError.from(error).message}`
 		);
 	}
-
-	const entries = group.db.list().map((row) => toFileEntry(group, row));
-	if (!metadataOnly) return entries;
-	return entries.filter((entry) => asObject(entry.metadata)?.role === 'metadata');
-}
-
-/** The media row of a pipeline, indexed from the group if needed. */
-export async function loadMediaForPipeline(
-	group: BackupGroup,
-	rawId: string
-): Promise<TelegramFile> {
-	const id = rawId.trim();
-	if (id === '') throw StorageError.badRequest('pipelineId is empty');
-
-	let row = group.db.findMediaByPipelineId(id);
-	if (!row) {
-		await reconcileMediaForPipeline(group, id);
-		row = group.db.findMediaByPipelineId(id);
-	}
-	if (!row) throw StorageError.notFound();
-	return toFileEntry(group, row);
+	return group.db.list().map((row) => toFileEntry(group, row));
 }

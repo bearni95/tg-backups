@@ -1,6 +1,6 @@
 import type { tl } from '@mtcute/node';
 import { AdapterClass } from '$adapters/classes/adapter.class';
-import type { StoredDocument } from '$types/telegram-server.type';
+import type { StoredDocument } from '$types/telegram-engine.type';
 
 export class TelegramMessageAdapter extends AdapterClass {
 	constructor() {

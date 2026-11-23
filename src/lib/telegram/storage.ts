@@ -4,7 +4,7 @@ import { describeError, log } from '$lib/logger';
 import { Semaphore } from '$lib/sync';
 import { parseJson } from '$utils/json/losslessJson';
 import type { TelegramCredentials } from '$types/telegram.type';
-import type { TransferPayload } from '$types/telegram-server.type';
+import type { TransferPayload } from '$types/telegram-engine.type';
 import {
 	clearCredentials,
 	credentialsFromBuild,
@@ -39,14 +39,14 @@ function requireCredentials({ apiId, apiHash }: TelegramCredentials, prefix = ''
 	}
 }
 
-/** The process-wide backend: one MTProto client, one login at a time, any number of groups. */
+/** The engine of one `tgb` run: one MTProto client, one login at a time, any number of groups. */
 export class TelegramStorage {
 	readonly groups: Groups;
 	readonly uploads: UploadRegistry;
 	readonly login: LoginFlow;
 
 	private connection: Connection | null = null;
-	// Swapping the client is serialised, or two requests would both leave one running.
+	// Swapping the client is serialised, or two callers would both leave one running.
 	private readonly lifecycle = new Semaphore();
 
 	private constructor(
@@ -140,7 +140,7 @@ export class TelegramStorage {
 			await this.disconnect();
 			await this.wipeSession();
 			this.groups.clearIndexes();
-			// So the next login skips the credentials screen.
+			// So the next login doesn't ask for the credentials again.
 			this.tryConnect('logout');
 		});
 	}

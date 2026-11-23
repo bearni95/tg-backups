@@ -2,7 +2,7 @@ import type { tl } from '@mtcute/node';
 import { AdapterClass } from '$adapters/classes/adapter.class';
 import { telegramPeerAdapter } from '$adapters/classes/telegram-peer.adapter';
 import type { TelegramGroup } from '$types/telegram.type';
-import type { PeerRef, SavedGroup } from '$types/telegram-server.type';
+import type { PeerRef, SavedGroup } from '$types/telegram-engine.type';
 
 const GROUP_ID = /^(channel|chat)-([1-9]\d{0,15})$/;
 

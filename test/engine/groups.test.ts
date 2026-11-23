@@ -39,7 +39,7 @@ async function put(storage: TelegramStorage, group: string, content: string) {
 }
 
 async function list(storage: TelegramStorage, group: string | null) {
-	return listFiles(await storage.groups.resolve(group), null);
+	return listFiles(await storage.groups.resolve(group));
 }
 
 async function read(storage: TelegramStorage, group: string, id: string) {
@@ -121,7 +121,7 @@ describe('creating a group', () => {
 		};
 		const storage = await backend.withoutGroup();
 		await expect(storage.groups.create('More')).rejects.toMatchObject({
-			status: 400,
+			code: 'bad_request',
 			message: expect.stringContaining('too many groups')
 		});
 	});

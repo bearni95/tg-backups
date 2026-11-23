@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { IndexDb, timestamp } from '../../src/lib/telegram/db';
 import { multipartGroupKey } from '../../src/lib/telegram/reconcile';
-import type { FileRow, MintGroup } from '../../src/types/telegram-server.type';
+import type { FileRow, MintGroup } from '../../src/types/telegram-engine.type';
 
 let root: string;
 let path: string;
@@ -126,14 +126,6 @@ describe('files', () => {
 		part('many', 0, 2);
 		part('many', 1, 3);
 		expect(db.findResumable('f.zip', 100)?.id).toBe('many');
-	});
-
-	it('finds media by pipeline id', () => {
-		insert('sidecar', { metadata: '{"pipelineId":"p1","role":"metadata"}' });
-		insert('nested', { metadata: '{"other":{"pipelineId":"p1"}}' });
-		expect(db.findMediaByPipelineId('p1')).toBeNull();
-		insert('media', { metadata: '{"pipelineId":"p1","role":"media"}' });
-		expect(db.findMediaByPipelineId('p1')?.id).toBe('media');
 	});
 
 	it('updates the checksum and the head message', () => {

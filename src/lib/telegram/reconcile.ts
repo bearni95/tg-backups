@@ -5,17 +5,11 @@ import { log } from '$lib/logger';
 import { telegramFileAdapter } from '$adapters/classes/telegram-file.adapter';
 import { telegramMarkerAdapter } from '$adapters/classes/telegram-marker.adapter';
 import { telegramMessageAdapter } from '$adapters/classes/telegram-message.adapter';
-import { asObject, stringifyCanonical } from '$utils/json/losslessJson';
+import { stringifyCanonical } from '$utils/json/losslessJson';
 import { isAllowedBackup } from '$utils/telegram/mediaType';
-import type { FilePart, MultipartMarker } from '$types/telegram-server.type';
+import type { FilePart, MultipartMarker } from '$types/telegram-engine.type';
 import { iterateHistory } from './chat';
 import type { BackupGroup } from './backup-group';
-
-/**
- * `all` also adopts unmarked zips and stages incomplete groups across walks.
- * The other two are single-pass walks for one kind of marked upload.
- */
-type Filter = { kind: 'all' } | { kind: 'metadata' } | { kind: 'pipeline'; id: string };
 
 interface Group extends Omit<MultipartMarker, 'index' | 'partChecksum'> {
 	chunks: FilePart[];
@@ -51,40 +45,22 @@ function completeCopies(repeats: FilePart[], total: number): FilePart[][] {
 	}
 }
 
-function keepMarked(filter: Filter, marker: MultipartMarker): boolean {
-	if (filter.kind === 'all') return true;
-	const metadata = asObject(marker.metadata);
-	if (filter.kind === 'metadata') return metadata?.role === 'metadata';
-	return metadata?.pipelineId === filter.id && metadata.role !== 'metadata';
-}
-
 export async function reconcileIndex(group: BackupGroup): Promise<number> {
 	const { value, ran } = await group.indexReconciled.run(
-		async () => (await walkAndMint(group, { kind: 'all' })).length
+		async () => (await walkAndMint(group)).length
 	);
 	return ran ? value : 0;
 }
 
-export async function reconcileMetadataOnly(group: BackupGroup): Promise<number> {
-	const { value, ran } = await group.metadataReconciled.run(
-		async () => (await walkAndMint(group, { kind: 'metadata' })).length
-	);
-	return ran ? value : 0;
-}
-
-export async function reconcileMediaForPipeline(
-	group: BackupGroup,
-	id: string
-): Promise<string | null> {
-	return (await walkAndMint(group, { kind: 'pipeline', id }))[0] ?? null;
-}
-
-/** Returns the ids it minted. */
-export async function walkAndMint(
-	{ connection, db, peer: target }: BackupGroup,
-	filter: Filter
-): Promise<string[]> {
-	const full = filter.kind === 'all';
+/**
+ * Indexes the backups in the group, adopting unmarked zips and staging
+ * incomplete ones across walks. Returns the ids it minted.
+ */
+export async function walkAndMint({
+	connection,
+	db,
+	peer: target
+}: BackupGroup): Promise<string[]> {
 	const minted: string[] = [];
 	const groups = new Map<string, Group>();
 
@@ -98,18 +74,16 @@ export async function walkAndMint(
 		return group;
 	};
 
-	if (full) {
-		// What earlier walks saw, so chunks accumulate until the group is whole.
-		for (const pending of db.loadPendingChunks()) {
-			const { name, declaredSize, total, mime, caption, checksum } = pending;
-			const metadata = telegramFileAdapter.metadataFromRow(pending);
-			groupFor({ name, size: declaredSize, total, mime, caption, checksum, metadata }).chunks.push({
-				ord: pending.ord,
-				tgMessageId: pending.tgMessageId,
-				sizeBytes: pending.sizeBytes,
-				checksumSha256: pending.partChecksum
-			});
-		}
+	// What earlier walks saw, so chunks accumulate until the group is whole.
+	for (const pending of db.loadPendingChunks()) {
+		const { name, declaredSize, total, mime, caption, checksum } = pending;
+		const metadata = telegramFileAdapter.metadataFromRow(pending);
+		groupFor({ name, size: declaredSize, total, mime, caption, checksum, metadata }).chunks.push({
+			ord: pending.ord,
+			tgMessageId: pending.tgMessageId,
+			sizeBytes: pending.sizeBytes,
+			checksumSha256: pending.partChecksum
+		});
 	}
 
 	for await (const message of iterateHistory(connection, target)) {
@@ -119,7 +93,6 @@ export async function walkAndMint(
 
 		const marker = telegramMarkerAdapter.fromCaption(text);
 		if (marker) {
-			if (!keepMarked(filter, marker)) continue;
 			// Don't skip a chunk for already having a part row: a half-finished mint
 			// would then hide it on every later walk. healAndMint sorts that out.
 			const { index, partChecksum, ...shared } = marker;
@@ -140,7 +113,7 @@ export async function walkAndMint(
 		}
 
 		// Unmarked documents count only when they are zips.
-		if (!full || !isAllowedBackup(document.name, document.mimeType)) continue;
+		if (!isAllowedBackup(document.name, document.mimeType)) continue;
 		if (db.findByMessageId(message.id) || db.partMessageIdExists(message.id)) continue;
 
 		const id = randomUUID();
@@ -170,7 +143,6 @@ export async function walkAndMint(
 		const complete = chunks.length === total && chunks.every((chunk, i) => chunk.ord === i);
 
 		if (!complete) {
-			if (!full) continue;
 			for (const chunk of chunks) {
 				db.upsertPendingPart({
 					groupId,
@@ -207,7 +179,7 @@ export async function walkAndMint(
 			});
 			if (id) minted.push(id);
 		}
-		if (full) db.deletePendingByIdentity(name, size, total);
+		db.deletePendingByIdentity(name, size, total);
 	}
 
 	log.info(`group reconcile finished: ${minted.length} new backups indexed`);

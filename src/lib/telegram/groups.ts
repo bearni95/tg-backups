@@ -6,7 +6,7 @@ import { Semaphore } from '$lib/sync';
 import { telegramGroupAdapter } from '$adapters/classes/telegram-group.adapter';
 import { GROUP_PREFIX, groupName } from '$utils/telegram/groupTitle';
 import type { TelegramGroup, TelegramGroupInfo } from '$types/telegram.type';
-import type { SavedGroup } from '$types/telegram-server.type';
+import type { SavedGroup } from '$types/telegram-engine.type';
 import { BackupGroup } from './backup-group';
 import type { Connection } from './connection';
 import { IndexDb } from './db';
@@ -35,7 +35,7 @@ export class Groups {
 		this.registry = new GroupRegistry(dataRoot);
 	}
 
-	/** For the status poll, so no network. */
+	/** For `tgb status` and group lists, so no network. */
 	overview(userId: number): { groups: TelegramGroup[]; activeGroupId: string | null } {
 		const { groups, activeGroupId } = this.registry.get(userId);
 		return { groups: groups.map((group) => telegramGroupAdapter.toApi(group)), activeGroupId };
@@ -93,7 +93,7 @@ export class Groups {
 		return { id, ...details };
 	}
 
-	/** The group a request works on: the one it names, else the selected one. */
+	/** The group a command works on: the one it names, else the selected one. */
 	async resolve(id: string | null): Promise<BackupGroup> {
 		const connection = this.connection();
 		const userId = await connection.account();

@@ -2,9 +2,7 @@
 // on disk, so an existing index.sqlite opens as is.
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync, type SQLInputValue, type StatementSync } from 'node:sqlite';
-import { asObject } from '$utils/json/losslessJson';
-import { telegramFileAdapter } from '$adapters/classes/telegram-file.adapter';
-import type { FilePart, FileRow, MintGroup, PendingChunk } from '$types/telegram-server.type';
+import type { FilePart, FileRow, MintGroup, PendingChunk } from '$types/telegram-engine.type';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS tg_files (
@@ -133,20 +131,6 @@ export class IndexDb {
 			name,
 			sizeBytes
 		);
-	}
-
-	/** The newest row with this `pipelineId` that isn't a metadata sidecar. */
-	findMediaByPipelineId(pipelineId: string): FileRow | null {
-		// LIKE narrows the scan; the parsed JSON decides.
-		const rows = this.all<FileRow>(
-			`SELECT ${FILE_COLUMNS} FROM tg_files WHERE metadata LIKE ? ORDER BY created_at DESC`,
-			`%"pipelineId":"${pipelineId}"%`
-		);
-		for (const row of rows) {
-			const metadata = asObject(telegramFileAdapter.metadataFromRow(row));
-			if (metadata?.pipelineId === pipelineId && metadata.role !== 'metadata') return row;
-		}
-		return null;
 	}
 
 	insert(file: Omit<FileRow, 'createdAt'>): void {

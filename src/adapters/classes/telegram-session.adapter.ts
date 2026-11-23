@@ -4,7 +4,7 @@ import type {
 	SessionData,
 	SessionDcOption,
 	SessionUpdatesState
-} from '$types/telegram-server.type';
+} from '$types/telegram-engine.type';
 
 const DEFAULT_DC = 2;
 

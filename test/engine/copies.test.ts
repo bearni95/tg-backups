@@ -32,7 +32,7 @@ async function restore(group: BackupGroup, id: string) {
 	return Buffer.concat(pieces).toString();
 }
 
-const walk = (group: BackupGroup) => walkAndMint(group, { kind: 'all' });
+const walk = (group: BackupGroup) => walkAndMint(group);
 
 describe('copies of the same backup', () => {
 	it('all show on a machine that rebuilds, so deleting them empties Telegram', async () => {

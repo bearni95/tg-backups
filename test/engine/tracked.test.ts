@@ -81,7 +81,7 @@ describe('running', () => {
 		const first = await runTracked(storage, store, String(id));
 		expect(first).toMatchObject({ status: 'uploaded', name: 'docs.zip' });
 		const group = await storage.groups.resolve(null);
-		const files = await listFiles(group, null);
+		const files = await listFiles(group);
 		expect(files.map((file) => file.name)).toEqual(['docs.zip']);
 		expect(readdirSync(stagingDir(storage.dataRoot))).toEqual([]);
 
@@ -92,7 +92,7 @@ describe('running', () => {
 		const later = new Date(Date.now() + 60_000);
 		utimesSync(join(folder, 'a.txt'), later, later);
 		expect((await runTracked(storage, store, String(id))).status).toBe('uploaded');
-		expect(await listFiles(group, null)).toHaveLength(2);
+		expect(await listFiles(group)).toHaveLength(2);
 		expect(store.require(String(id))).toMatchObject({ lastStatus: 'uploaded', lastError: null });
 	});
 
@@ -105,7 +105,7 @@ describe('running', () => {
 			status: 'uploaded',
 			name: 'db.zip'
 		});
-		const [file] = await listFiles(await storage.groups.resolve(null), null);
+		const [file] = await listFiles(await storage.groups.resolve(null));
 		expect(file).toMatchObject({ name: 'db.zip', sizeBytes: 9 });
 	});
 
@@ -143,7 +143,7 @@ describe('running', () => {
 		}
 		expect(store.require(String(id))).toMatchObject({ lastStatus: 'missing' });
 		// The text message isn't taken for a backup.
-		expect(await listFiles(await storage.groups.resolve(null), null)).toHaveLength(1);
+		expect(await listFiles(await storage.groups.resolve(null))).toHaveLength(1);
 	});
 });
 

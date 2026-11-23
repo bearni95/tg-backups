@@ -167,7 +167,7 @@ async function backupsMenu(storage: TelegramStorage): Promise<void> {
 				await uploadPaths(storage, group, [path.trim()]);
 				return;
 			}
-			const files = await listFiles(group, null);
+			const files = await listFiles(group);
 			if (action === 'list') {
 				console.log(cliDisplayAdapter.filesTable(files));
 				return;

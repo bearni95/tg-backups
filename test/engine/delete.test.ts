@@ -50,8 +50,7 @@ describe('delete tells the truth', () => {
 		const { id } = await upload(group);
 		refuse();
 		await expect(group.files.delete(id)).rejects.toMatchObject({
-			code: 'delete_failed',
-			status: 409
+			code: 'delete_failed'
 		});
 		expect(group.db.isComplete(group.db.get(id)!)).toBe(true);
 		expect(group.db.get(id)!.checksumSha256).not.toBeNull();
@@ -180,7 +179,7 @@ describe('delete tells the truth', () => {
 		const group = await backend.group();
 		const { id } = await upload(group);
 		await group.files.delete(id);
-		expect(await walkAndMint(group, { kind: 'all' })).toEqual([]);
+		expect(await walkAndMint(group)).toEqual([]);
 	});
 });
 

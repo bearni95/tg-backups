@@ -4,7 +4,7 @@ import { Long, type tl } from '@mtcute/node';
 import mime from 'mime';
 import { telegramMessageAdapter } from '$adapters/classes/telegram-message.adapter';
 import { telegramPeerAdapter } from '$adapters/classes/telegram-peer.adapter';
-import type { PeerRef } from '$types/telegram-server.type';
+import type { PeerRef } from '$types/telegram-engine.type';
 import type { Connection } from './connection';
 import { StorageError } from './errors';
 

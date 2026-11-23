@@ -139,7 +139,7 @@ export async function runTracked(
 		};
 
 		// Reads the group first, so a copy another machine uploaded counts too.
-		await listFiles(group, null);
+		await listFiles(group);
 		const existing = group.db.findByName(storedName(name, await sha256Of(upload)));
 		if (existing && group.db.isComplete(existing)) {
 			const updated = store.update(id, {

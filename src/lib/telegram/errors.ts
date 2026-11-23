@@ -1,35 +1,32 @@
 import { InvocationError } from './invocation-error';
 
-// Survives dev-server reloads, where `instanceof` would not.
+// Survives a second copy of this module, where `instanceof` would not.
 const BRAND = Symbol.for('tgb.StorageError');
 
-const STATUS = {
-	not_authenticated: 401,
-	password_required: 401,
-	credentials_missing: 400,
-	no_login_in_progress: 400,
-	login_in_progress_mismatch: 400,
-	invalid_code: 400,
-	invalid_password: 400,
-	bad_request: 400,
-	not_found: 404,
-	backup_incomplete: 409,
-	delete_failed: 409,
-	group_required: 409,
-	group_unavailable: 409,
-	group_not_found: 404,
-	upload_aborted: 409,
-	file_too_large: 413,
-	unsupported_media_type: 415,
-	checksum_mismatch: 422,
-	rate_limited: 429,
-	telegram_error: 500,
-	database_error: 500,
-	io_error: 500,
-	internal: 500
-} as const;
-
-export type ErrorCode = keyof typeof STATUS;
+export type ErrorCode =
+	| 'not_authenticated'
+	| 'password_required'
+	| 'credentials_missing'
+	| 'no_login_in_progress'
+	| 'login_in_progress_mismatch'
+	| 'invalid_code'
+	| 'invalid_password'
+	| 'bad_request'
+	| 'not_found'
+	| 'backup_incomplete'
+	| 'delete_failed'
+	| 'group_required'
+	| 'group_unavailable'
+	| 'group_not_found'
+	| 'upload_aborted'
+	| 'file_too_large'
+	| 'unsupported_media_type'
+	| 'checksum_mismatch'
+	| 'rate_limited'
+	| 'telegram_error'
+	| 'database_error'
+	| 'io_error'
+	| 'internal';
 
 interface ErrorDetails {
 	retryAfterSeconds?: number;
@@ -52,17 +49,14 @@ const SIGNED_OUT = new Set([
 /** The one error the engine throws, with a stable `code` and optional details. */
 export class StorageError extends Error {
 	readonly [BRAND] = true;
-	readonly status: number;
 
 	private constructor(
 		readonly code: ErrorCode,
 		message: string,
-		readonly details: ErrorDetails = {},
-		status?: number
+		readonly details: ErrorDetails = {}
 	) {
 		super(message);
 		this.name = 'StorageError';
-		this.status = status ?? STATUS[code];
 	}
 
 	static notAuthenticated() {
@@ -177,9 +171,8 @@ export class StorageError extends Error {
 		return new StorageError('io_error', `io error: ${message}`);
 	}
 
-	/** `status` is for requests rejected before they reach a handler (415, 422). */
-	static badRequest(message: string, status?: number) {
-		return new StorageError('bad_request', `bad request: ${message}`, {}, status);
+	static badRequest(message: string) {
+		return new StorageError('bad_request', `bad request: ${message}`);
 	}
 
 	static internal(message: string) {
@@ -203,10 +196,6 @@ export class StorageError extends Error {
 			return StorageError.internal(error.message);
 		}
 		return StorageError.internal(String(error));
-	}
-
-	toJSON() {
-		return { error: this.message, code: this.code, ...this.details };
 	}
 }
 

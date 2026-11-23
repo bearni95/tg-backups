@@ -1,6 +1,6 @@
 import { Long, type tl } from '@mtcute/node';
 import { AdapterClass } from '$adapters/classes/adapter.class';
-import type { PeerRef } from '$types/telegram-server.type';
+import type { PeerRef } from '$types/telegram-engine.type';
 
 export class TelegramPeerAdapter extends AdapterClass {
 	constructor() {

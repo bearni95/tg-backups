@@ -1,4 +1,4 @@
-// Replaced by `define` in vite.config.ts during `vite build`. Never import from client code.
+// Replaced by `define` in tsup.config.ts during `pnpm build`. Unset when run from source.
 declare const __TGB_VERSION__: string;
 declare const __TGB_API_ID__: string;
 declare const __TGB_API_HASH__: string;

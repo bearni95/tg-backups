@@ -1,5 +1,5 @@
 import { OnceAsync } from '$lib/sync';
-import type { GroupDetails, PeerRef } from '$types/telegram-server.type';
+import type { GroupDetails, PeerRef } from '$types/telegram-engine.type';
 import type { Connection } from './connection';
 import type { IndexDb } from './db';
 import { BackupFiles } from './files';
@@ -17,7 +17,6 @@ const MEMBERSHIP_TTL_MS = 60 * 60 * 1000;
 export class BackupGroup {
 	/** The walk runs once per group and connection; a failed walk runs again. */
 	readonly indexReconciled = new OnceAsync<number>();
-	readonly metadataReconciled = new OnceAsync<number>();
 	readonly files: BackupFiles;
 
 	private verifiedAt: number | null = null;

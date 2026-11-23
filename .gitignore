@@ -1,12 +1,5 @@
 node_modules
 
-# Output
-.output
-.vercel
-.netlify
-.wrangler
-/build
-
 # OS
 .DS_Store
 Thumbs.db
@@ -16,7 +9,6 @@ Thumbs.db
 .env.*
 !.env.example
 !.env.test
-
 
 # Test coverage
 coverage/

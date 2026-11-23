@@ -7,7 +7,7 @@ import { pipeline } from 'node:stream/promises';
 import { log } from '$lib/logger';
 import { storedName } from '$utils/telegram/backupName';
 import { isAllowedBackup } from '$utils/telegram/mediaType';
-import type { FileRow } from '$types/telegram-server.type';
+import type { FileRow } from '$types/telegram-engine.type';
 import { contentSha256 } from './backup';
 import { FileSource, type ByteSource } from './byte-source';
 import type { BackupGroup } from './backup-group';

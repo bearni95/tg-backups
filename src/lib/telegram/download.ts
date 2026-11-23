@@ -1,6 +1,6 @@
 import { log } from '$lib/logger';
 import { telegramMessageAdapter } from '$adapters/classes/telegram-message.adapter';
-import type { FilePart, FileRow, PeerRef, StoredDocument } from '$types/telegram-server.type';
+import type { FilePart, FileRow, PeerRef, StoredDocument } from '$types/telegram-engine.type';
 import {
 	deleteAndConfirm,
 	deleteMessages,

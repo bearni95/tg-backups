@@ -15,7 +15,7 @@ type InProgress =
 	| { stage: 'code'; request: auth.CodeRequest; delivery: TelegramCodeDelivery }
 	| { stage: 'password' };
 
-/** The login wizard's state. One login at a time. */
+/** The state of a login under way. One login at a time. */
 export class LoginFlow {
 	private state: InProgress | null = null;
 	// Held across the RPC, so a resend can't race a code submit for the hash.

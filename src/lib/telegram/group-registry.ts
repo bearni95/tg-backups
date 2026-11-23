@@ -3,7 +3,7 @@ import { dirname } from 'node:path';
 import { log } from '$lib/logger';
 import { telegramGroupAdapter } from '$adapters/classes/telegram-group.adapter';
 import { asObject, parseJson } from '$utils/json/losslessJson';
-import type { AccountGroups, SavedGroup } from '$types/telegram-server.type';
+import type { AccountGroups, SavedGroup } from '$types/telegram-engine.type';
 import { groupsPath } from './paths';
 import { writePrivateFile } from './session';
 
@@ -86,7 +86,7 @@ export class GroupRegistry {
 		}
 		if (!accounts) {
 			// Nothing is lost: groups can be picked again from Telegram.
-			log.warn(`${this.path} is unreadable; pick the groups again in the app`);
+			log.warn(`${this.path} is unreadable; pick the groups again with \`tgb groups use\``);
 			return;
 		}
 

@@ -26,7 +26,7 @@ export async function readStatus(storage: TelegramStorage): Promise<TelegramStat
 		hasCredentials: storage.credentials !== null,
 		connected: connection !== null,
 		signedIn,
-		// Groups are per account, so the app opens once the account is known.
+		// Groups are per account, so commands can work once the account is known.
 		authorized: userId !== null,
 		loginInProgress: stage,
 		codeDelivery: delivery,

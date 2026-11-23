@@ -8,7 +8,7 @@ import type {
 	SessionData,
 	SessionDcOption,
 	SessionUpdatesState
-} from '$types/telegram-server.type';
+} from '$types/telegram-engine.type';
 
 /** Replace a file atomically and owner-only, so a crash can't leave half of it. */
 export function writePrivateFile(path: string, text: string): void {

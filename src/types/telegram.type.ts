@@ -92,19 +92,12 @@ export type TelegramAuthOutcome =
 export interface TelegramQrPending {
 	outcome: 'pending';
 	url: string;
-	/** Unix seconds when this token expires (the backend hands out a new one after). */
+	/** Unix seconds when this token expires (the next poll gets a new one after). */
 	expiresAt: number;
 }
 
-/** One poll of `POST /api/telegram/auth/qr`. */
+/** One poll of the QR login. */
 export type TelegramQrStep = TelegramQrPending | TelegramAuthOutcome;
-
-export interface TelegramApiError {
-	error: string;
-	code: string;
-	retryAfterSeconds?: number;
-	limitBytes?: number;
-}
 
 export type TelegramUploadStatus = 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 

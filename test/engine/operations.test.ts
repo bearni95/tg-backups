@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveGroup } from '../../src/cli/context';
-import { listFiles, loadMediaForPipeline, uploadedEntry } from '../../src/lib/telegram/catalog';
+import { listFiles, uploadedEntry } from '../../src/lib/telegram/catalog';
 import { InvocationError } from '../../src/lib/telegram/invocation-error';
 import { fileNameOf, startUpload } from '../../src/lib/telegram/local-paths';
 import { groupsDir, sessionPath, telegramDir } from '../../src/lib/telegram/paths';
@@ -139,7 +139,7 @@ describe('credentials and transfer', () => {
 		'{"v":-1}',
 		'[]'
 	])('refuses the transfer file %s', (text) => {
-		expect(() => parseTransfer(text)).toThrow(expect.objectContaining({ status: 422 }));
+		expect(() => parseTransfer(text)).toThrow(expect.objectContaining({ code: 'bad_request' }));
 	});
 
 	it("doesn't echo a malformed transfer file", () => {
@@ -291,7 +291,7 @@ describe('uploads and restores', () => {
 		const entry = await uploaded(storage);
 		expect(entry).toMatchObject({ name: 'db.zip', sizeBytes: 10, complete: true });
 		const group = await storage.groups.resolve(null);
-		expect(await listFiles(group, null)).toEqual([entry]);
+		expect(await listFiles(group)).toEqual([entry]);
 
 		const path = await restoreToFile(group, entry.id, { target: out });
 		expect(path).toBe(join(out, 'db.zip'));
@@ -410,18 +410,7 @@ describe('uploads and restores', () => {
 		backend.telegram.intercept = (request) => {
 			if (request._ === 'messages.getHistory') throw InvocationError.rpc(500, 'INTERNAL');
 		};
-		expect(await listFiles(await storage.groups.resolve(null), null)).toHaveLength(1);
-	});
-
-	it('scopes the listing and loads media by pipeline', async () => {
-		const storage = await backend.signedIn();
-		for (const role of ['metadata', 'media']) {
-			await uploaded(storage, role, `${role}.zip`, { metadata: { pipelineId: 'p1', role } });
-		}
-		const group = await storage.groups.resolve(null);
-		expect((await listFiles(group, 'metadata')).map((file) => file.name)).toEqual(['metadata.zip']);
-		expect((await loadMediaForPipeline(group, 'p1')).name).toBe('media.zip');
-		await rejectsWith(loadMediaForPipeline(group, 'none'), 'not_found');
+		expect(await listFiles(await storage.groups.resolve(null))).toHaveLength(1);
 	});
 
 	it('wipes everything on delete-all', async () => {

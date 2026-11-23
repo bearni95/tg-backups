@@ -66,7 +66,7 @@ export async function restoreBackup(
 	overwrite?: boolean
 ): Promise<string> {
 	// Fills the index, so a backup another machine uploaded is found.
-	await listFiles(group, null);
+	await listFiles(group);
 	const bar = restoreBar(id);
 	try {
 		return await restoreToFile(group, id, {
@@ -89,7 +89,7 @@ export function registerBackupCommands(program: Command): void {
 		.action((options: { group?: string; json?: boolean }) =>
 			withStorage(async (storage) => {
 				const group = await resolveGroup(storage, options.group);
-				const files = await listFiles(group, null);
+				const files = await listFiles(group);
 				if (options.json) return printJson(files);
 				console.log(cliDisplayAdapter.filesTable(files));
 			})
@@ -136,7 +136,7 @@ export function registerBackupCommands(program: Command): void {
 		.action((ids: string[], options: { group?: string; yes?: boolean }) =>
 			withStorage(async (storage) => {
 				const group = await resolveGroup(storage, options.group);
-				const files = await listFiles(group, null);
+				const files = await listFiles(group);
 				const chosen = ids.map((id) => {
 					const file = files.find((entry) => entry.id === id);
 					if (!file) throw StorageError.badRequest(`no backup ${id} in ${group.title}`);

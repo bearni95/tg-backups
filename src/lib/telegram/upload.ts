@@ -11,7 +11,7 @@ import { log } from '$lib/logger';
 import { sleep } from '$lib/sync';
 import { telegramMarkerAdapter } from '$adapters/classes/telegram-marker.adapter';
 import { stringifyCanonical } from '$utils/json/losslessJson';
-import type { PeerRef } from '$types/telegram-server.type';
+import type { PeerRef } from '$types/telegram-engine.type';
 import type { ByteSource } from './byte-source';
 import { randomLong, sendDocument } from './chat';
 import type { Connection } from './connection';

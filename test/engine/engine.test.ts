@@ -41,43 +41,40 @@ const MIB = 1024 * 1024;
 
 describe('errors', () => {
 	it.each([
-		[StorageError.notAuthenticated(), 'not_authenticated', 401],
-		[StorageError.passwordRequired(), 'password_required', 401],
-		[StorageError.credentialsMissing(), 'credentials_missing', 400],
-		[StorageError.loginInProgressMismatch(), 'login_in_progress_mismatch', 400],
-		[StorageError.noLoginInProgress(), 'no_login_in_progress', 400],
-		[StorageError.invalidCode(), 'invalid_code', 400],
-		[StorageError.invalidPassword(), 'invalid_password', 400],
-		[StorageError.badRequest('x'), 'bad_request', 400],
-		[StorageError.notFound(), 'not_found', 404],
-		[StorageError.groupNotFound(), 'group_not_found', 404],
-		[StorageError.groupRequired(), 'group_required', 409],
-		[StorageError.groupUnavailable(), 'group_unavailable', 409],
-		[StorageError.backupIncomplete(), 'backup_incomplete', 409],
-		[StorageError.uploadAborted(), 'upload_aborted', 409],
-		[StorageError.fileTooLarge(10), 'file_too_large', 413],
-		[StorageError.unsupportedMediaType('x', 'y'), 'unsupported_media_type', 415],
-		[StorageError.checksumMismatch('a', 'b'), 'checksum_mismatch', 422],
-		[StorageError.rateLimited(3), 'rate_limited', 429],
-		[StorageError.telegram('x'), 'telegram_error', 500],
-		[StorageError.database('x'), 'database_error', 500],
-		[StorageError.io('x'), 'io_error', 500],
-		[StorageError.internal('x'), 'internal', 500]
-	])('%s is %s / %i', (error, code, status) => {
+		[StorageError.notAuthenticated(), 'not_authenticated'],
+		[StorageError.passwordRequired(), 'password_required'],
+		[StorageError.credentialsMissing(), 'credentials_missing'],
+		[StorageError.loginInProgressMismatch(), 'login_in_progress_mismatch'],
+		[StorageError.noLoginInProgress(), 'no_login_in_progress'],
+		[StorageError.invalidCode(), 'invalid_code'],
+		[StorageError.invalidPassword(), 'invalid_password'],
+		[StorageError.badRequest('x'), 'bad_request'],
+		[StorageError.notFound(), 'not_found'],
+		[StorageError.groupNotFound(), 'group_not_found'],
+		[StorageError.groupRequired(), 'group_required'],
+		[StorageError.groupUnavailable(), 'group_unavailable'],
+		[StorageError.backupIncomplete(), 'backup_incomplete'],
+		[StorageError.uploadAborted(), 'upload_aborted'],
+		[StorageError.fileTooLarge(10), 'file_too_large'],
+		[StorageError.unsupportedMediaType('x', 'y'), 'unsupported_media_type'],
+		[StorageError.checksumMismatch('a', 'b'), 'checksum_mismatch'],
+		[StorageError.rateLimited(3), 'rate_limited'],
+		[StorageError.telegram('x'), 'telegram_error'],
+		[StorageError.database('x'), 'database_error'],
+		[StorageError.io('x'), 'io_error'],
+		[StorageError.internal('x'), 'internal']
+	])('%s is %s', (error, code) => {
 		expect(error.code).toBe(code);
-		expect(error.status).toBe(status);
 	});
 
-	it('serialises details', () => {
-		expect(StorageError.rateLimited(12).toJSON()).toMatchObject({
-			code: 'rate_limited',
+	it('keeps details', () => {
+		expect(StorageError.rateLimited(12).details).toEqual({
 			retryAfterSeconds: 12
 		});
-		expect(StorageError.fileTooLarge(999).toJSON()).toMatchObject({
-			code: 'file_too_large',
+		expect(StorageError.fileTooLarge(999).details).toEqual({
 			limitBytes: 999
 		});
-		expect(StorageError.unsupportedMediaType('cover.jpg', 'image/jpeg').toJSON()).toMatchObject({
+		expect(StorageError.unsupportedMediaType('cover.jpg', 'image/jpeg').details).toEqual({
 			name: 'cover.jpg',
 			mime: 'image/jpeg'
 		});
