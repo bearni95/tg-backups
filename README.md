@@ -5,7 +5,7 @@ A command line tool that creates and restores zip backups using Telegram groups 
 ## Setup
 
 1. With Node 24 or later: `pnpm install`, then `pnpm build`.
-2. Put `tgb` on your path with `pnpm link --global`, or run it as `node dist/cli.js`. While developing, `pnpm tgb <command>` runs the source without building.
+2. Put `tgb` on your path with `npm link` (pnpm 12 has no global link), or run it as `node dist/cli.js`. While developing, `pnpm tgb <command>` runs the source without building.
 3. `tgb login`. It asks for an API id and hash from https://my.telegram.org/apps if none are saved yet. They can also go in `.env` (`cp .env.example .env`), or be set with `tgb credentials set`.
 4. Choose where backups go: `tgb groups create <name>` makes a new group. To use one the account is already in, run `tgb groups available`, then `tgb groups use <id>`. Backup group names start with `TGB-`, in capitals: the tool adds it to the groups it creates, and only offers existing groups that have it.
 
