@@ -29,7 +29,7 @@ export class TelegramAuthAdapter extends AdapterClass {
 		super('telegram-auth');
 	}
 
-	/** Where a login code went, so the UI can say where to look. */
+	/** Where a login code went, so the CLI can say where to look. */
 	deliveryFromSentCode(sent: tl.auth.RawSentCode): TelegramCodeDelivery {
 		return {
 			method: SENT_METHODS[sent.type._],

@@ -1,29 +1,6 @@
-import '@testing-library/jest-dom/vitest';
 import { beforeEach, vi } from 'vitest';
 
-// Mock localStorage
-const localStorageMock = (() => {
-	let store: Record<string, string> = {};
-
-	return {
-		getItem: (key: string) => store[key] || null,
-		setItem: (key: string, value: string) => {
-			if (value === undefined || value === null) {
-				store[key] = String(value);
-			} else {
-				store[key] = value.toString();
-			}
-		},
-		removeItem: (key: string) => {
-			delete store[key];
-		},
-		clear: () => {
-			store = {};
-		}
-	};
-})();
-
-// Mock console methods
+// Quiet console in tests; assertions can still inspect the mocks.
 global.console = {
 	...console,
 	log: vi.fn(),
@@ -33,15 +10,6 @@ global.console = {
 	error: vi.fn()
 };
 
-// globalThis, so this also runs in the server tests' node environment.
-Object.defineProperty(globalThis, 'localStorage', {
-	configurable: true,
-	writable: true,
-	value: localStorageMock
-});
-
-// Clear mocks and localStorage before each test
 beforeEach(() => {
-	localStorage.clear();
 	vi.clearAllMocks();
 });

@@ -14,7 +14,7 @@ export type TelegramCodeMethod =
 	| 'sms_word'
 	| 'sms_phrase';
 
-/** Where the pending login code went, so the UI can tell the user where to look. */
+/** Where the pending login code went, so the CLI can tell the user where to look. */
 export interface TelegramCodeDelivery {
 	method: TelegramCodeMethod;
 	length: number | null;

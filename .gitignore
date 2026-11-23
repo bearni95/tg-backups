@@ -5,7 +5,6 @@ node_modules
 .vercel
 .netlify
 .wrangler
-/.svelte-kit
 /build
 
 # OS
@@ -18,9 +17,6 @@ Thumbs.db
 !.env.example
 !.env.test
 
-# Vite
-vite.config.js.timestamp-*
-vite.config.ts.timestamp-*
 
 # Test coverage
 coverage/

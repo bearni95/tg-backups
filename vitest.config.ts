@@ -1,30 +1,26 @@
+import { resolve } from 'node:path';
 import { defineConfig } from 'vitest/config';
-import { svelte } from '@sveltejs/vite-plugin-svelte';
-import { svelteTesting } from '@testing-library/svelte/vite';
-import { resolve } from 'path';
+
+const src = (path: string) => resolve(import.meta.dirname, 'src', path);
 
 export default defineConfig({
-	plugins: [svelte({ hot: !process.env.VITEST }), svelteTesting()],
 	test: {
 		globals: true,
-		environment: 'happy-dom',
+		environment: 'node',
 		setupFiles: ['./test/setup.ts'],
-		include: ['test/**/*.{test,spec}.{js,ts}'],
+		include: ['test/**/*.{test,spec}.ts'],
 		coverage: {
 			provider: 'v8',
 			reporter: ['text', 'json', 'html'],
-			exclude: ['node_modules/', 'test/', '**/*.d.ts', '**/*.config.*', '**/mockData', 'dist/']
+			exclude: ['node_modules/', 'test/', '**/*.d.ts', '**/*.config.*', 'dist/']
 		}
 	},
 	resolve: {
 		alias: {
-			$lib: resolve(__dirname, './src/lib'),
-			$services: resolve(__dirname, './src/services'),
-			$adapters: resolve(__dirname, './src/adapters'),
-			$types: resolve(__dirname, './src/types'),
-			$components: resolve(__dirname, './src/components'),
-			$utils: resolve(__dirname, './src/utils'),
-			$app: resolve(__dirname, './test/mocks/$app')
+			$lib: src('lib'),
+			$adapters: src('adapters'),
+			$types: src('types'),
+			$utils: src('utils')
 		}
 	}
 });

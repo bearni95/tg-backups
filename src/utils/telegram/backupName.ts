@@ -1,7 +1,7 @@
 // The chunk engine treats (name, size) as one logical file, both when it resumes
 // and when it rebuilds the index from the group. Backups break that: `db.zip` is
 // uploaded again and again with other bytes and sometimes the same size. So the
-// stored name carries a fingerprint of the content, and the API hides it again.
+// stored name carries a fingerprint of the content, and listings hide it again.
 const TAG = '.tgb-';
 const FINGERPRINT_LENGTH = 12;
 const FINGERPRINT = new RegExp(`^[0-9a-fA-F]{${FINGERPRINT_LENGTH}}$`);
