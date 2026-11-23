@@ -24,6 +24,8 @@ export function useBackend() {
 		vi.stubEnv('TELEGRAM_API_ID', '');
 		vi.stubEnv('TELEGRAM_API_HASH', '');
 		vi.stubEnv('TGB_DATA_DIR', root);
+		// Never the real crontab.
+		vi.stubEnv('TGB_CRONTAB_FILE', join(root, 'crontab'));
 	});
 
 	afterEach(async () => {

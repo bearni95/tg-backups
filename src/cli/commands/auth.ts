@@ -22,7 +22,7 @@ function parseApiId(raw: string): number {
 	return value;
 }
 
-async function askCredentials(storage: TelegramStorage, apiId?: string, apiHash?: string) {
+export async function askCredentials(storage: TelegramStorage, apiId?: string, apiHash?: string) {
 	if (apiId === undefined || apiHash === undefined) {
 		console.log('Get an API id and hash at https://my.telegram.org/apps');
 	}
@@ -84,7 +84,7 @@ async function finish(storage: TelegramStorage, outcome: TelegramAuthOutcome): P
 	return askPassword(storage, outcome.hint);
 }
 
-async function phoneLogin(storage: TelegramStorage, phone: string): Promise<boolean> {
+export async function phoneLogin(storage: TelegramStorage, phone: string): Promise<boolean> {
 	let delivery: TelegramCodeDelivery = await storage.login.start(phone);
 	for (;;) {
 		console.log(describeCodeDelivery(delivery));
@@ -107,7 +107,7 @@ async function phoneLogin(storage: TelegramStorage, phone: string): Promise<bool
 }
 
 /** Polls the QR login, redrawing the code whenever Telegram issues a new token. */
-async function qrLogin(storage: TelegramStorage): Promise<boolean> {
+export async function qrLogin(storage: TelegramStorage): Promise<boolean> {
 	let stopped = false;
 	const stop = () => (stopped = true);
 	process.once('SIGINT', stop);

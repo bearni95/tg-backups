@@ -1,6 +1,8 @@
 import { AdapterClass } from '$adapters/classes/adapter.class';
 import { formatBytes, formatEta } from '$utils/format';
 import { formatTable } from '$utils/table';
+import { describeSchedule } from '$utils/cron/schedule';
+import type { TrackedPath, TrackedRunOutcome } from '$types/tracked.type';
 import type {
 	TelegramFile,
 	TelegramGroup,
@@ -63,6 +65,49 @@ export class CliDisplayAdapter extends AdapterClass {
 			);
 		}
 		return warnings;
+	}
+
+	trackedTable(entries: TrackedPath[]): string {
+		if (entries.length === 0) return 'Nothing tracked yet.';
+		const rows = entries.map((entry) => [
+			String(entry.id),
+			describeSchedule(entry.schedule),
+			entry.lastRunAt
+				? `${this.createdLabel(entry.lastRunAt)} ${entry.lastStatus ?? ''}`.trim()
+				: 'never',
+			entry.groupTitle,
+			entry.path
+		]);
+		return formatTable([['ID', 'SCHEDULE', 'LAST RUN', 'GROUP', 'PATH'], ...rows]);
+	}
+
+	/** A label for a tracked path in a menu. */
+	trackedChoice(entry: TrackedPath): string {
+		return `${entry.path}  (${describeSchedule(entry.schedule)}, ${entry.groupTitle})`;
+	}
+
+	/** What a run did. Not ok goes to stderr, with exit code 1. */
+	trackedOutcome(outcome: TrackedRunOutcome): { ok: boolean; line: string } {
+		const { entry } = outcome;
+		switch (outcome.status) {
+			case 'uploaded':
+				return {
+					ok: true,
+					line: `${outcome.backupId}  ${outcome.name}  uploaded from ${entry.path}`
+				};
+			case 'unchanged':
+				return {
+					ok: true,
+					line: `${outcome.backupId}  ${outcome.name}  unchanged, not uploaded again`
+				};
+			case 'missing':
+				return {
+					ok: false,
+					line: `missing: ${entry.path} was not found; a message saying so was sent to ${entry.groupTitle}`
+				};
+			case 'failed':
+				return { ok: false, line: `failed: ${entry.path}: ${outcome.error}` };
+		}
 	}
 
 	statusLines(status: TelegramStatus, apiId: number | null): string[] {

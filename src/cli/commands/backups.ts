@@ -6,6 +6,8 @@ import { listFiles } from '$lib/telegram/catalog';
 import { StorageError } from '$lib/telegram/errors';
 import { startUpload } from '$lib/telegram/local-paths';
 import { restoreToFile } from '$lib/telegram/restore';
+import type { BackupGroup } from '$lib/telegram/backup-group';
+import type { TelegramStorage } from '$lib/telegram/storage';
 import { cliDisplayAdapter } from '$adapters/classes/cli-display.adapter';
 import type { TelegramUploadSnapshot } from '$types/telegram.type';
 import { printJson, resolveGroup, withStorage } from '../context';
@@ -15,6 +17,67 @@ const GROUP_OPTION = [
 	'-g, --group <group>',
 	'group id or title; the chosen one by default'
 ] as const;
+
+/**
+ * Upload zips, or folders of zips, with progress. Results go to stdout.
+ * Returns whether every upload completed.
+ */
+export async function uploadPaths(
+	storage: TelegramStorage,
+	group: BackupGroup,
+	paths: string[],
+	name?: string
+): Promise<boolean> {
+	if (name !== undefined && paths.length > 1) {
+		throw StorageError.badRequest('--name works with a single zip only');
+	}
+	const queued: TelegramUploadSnapshot[] = [];
+	try {
+		for (const path of paths) {
+			queued.push(...(await startUpload(storage, group, { path: resolve(path), name })));
+		}
+	} catch (error) {
+		// All or nothing: a bad path doesn't leave the others running.
+		for (const upload of queued) storage.uploads.cancel(upload.uploadId);
+		throw error;
+	}
+
+	console.error(`Uploading ${queued.length} zip(s) to ${group.title}.`);
+	const results = await watchUploads(
+		storage.uploads,
+		queued.map((upload) => upload.uploadId)
+	);
+	for (const upload of results) {
+		if (upload.status === 'completed') console.log(`${upload.fileId}  ${upload.name}`);
+		else
+			console.error(`${upload.status}: ${upload.name}${upload.error ? `: ${upload.error}` : ''}`);
+	}
+	if (results.some((upload) => upload.status === 'cancelled')) {
+		console.error('Upload the same zip again to resume: chunks already sent are skipped.');
+	}
+	return results.every((upload) => upload.status === 'completed');
+}
+
+/** Restore with a progress bar, and return where it was written. */
+export async function restoreBackup(
+	group: BackupGroup,
+	id: string,
+	target: string,
+	overwrite?: boolean
+): Promise<string> {
+	// Fills the index, so a backup another machine uploaded is found.
+	await listFiles(group, null);
+	const bar = restoreBar(id);
+	try {
+		return await restoreToFile(group, id, {
+			target,
+			overwrite,
+			onProgress: (written, total) => bar?.update(written, total)
+		});
+	} finally {
+		bar?.stop();
+	}
+}
 
 export function registerBackupCommands(program: Command): void {
 	program
@@ -45,35 +108,7 @@ export function registerBackupCommands(program: Command): void {
 					throw StorageError.badRequest('--name works with a single zip only');
 				}
 				const group = await resolveGroup(storage, options.group);
-				const queued: TelegramUploadSnapshot[] = [];
-				try {
-					for (const path of paths) {
-						queued.push(
-							...(await startUpload(storage, group, { path: resolve(path), name: options.name }))
-						);
-					}
-				} catch (error) {
-					// All or nothing: a bad path doesn't leave the others running.
-					for (const upload of queued) storage.uploads.cancel(upload.uploadId);
-					throw error;
-				}
-
-				console.error(`Uploading ${queued.length} zip(s) to ${group.title}.`);
-				const results = await watchUploads(
-					storage.uploads,
-					queued.map((upload) => upload.uploadId)
-				);
-				for (const upload of results) {
-					if (upload.status === 'completed') console.log(`${upload.fileId}  ${upload.name}`);
-					else
-						console.error(
-							`${upload.status}: ${upload.name}${upload.error ? `: ${upload.error}` : ''}`
-						);
-				}
-				if (results.some((upload) => upload.status === 'cancelled')) {
-					console.error('Run the same command again to resume: chunks already sent are skipped.');
-				}
-				if (results.some((upload) => upload.status !== 'completed')) process.exitCode = 1;
+				if (!(await uploadPaths(storage, group, paths, options.name))) process.exitCode = 1;
 			})
 		);
 
@@ -87,21 +122,7 @@ export function registerBackupCommands(program: Command): void {
 		.action((id: string, options: { group?: string; output: string; force?: boolean }) =>
 			withStorage(async (storage) => {
 				const group = await resolveGroup(storage, options.group);
-				// Fills the index, so a backup another machine uploaded is found.
-				await listFiles(group, null);
-				const bar = restoreBar(id);
-				try {
-					const path = await restoreToFile(group, id, {
-						target: resolve(options.output),
-						overwrite: options.force,
-						onProgress: (written, total) => bar?.update(written, total)
-					});
-					bar?.stop();
-					console.log(path);
-				} catch (error) {
-					bar?.stop();
-					throw error;
-				}
+				console.log(await restoreBackup(group, id, resolve(options.output), options.force));
 			})
 		);
 

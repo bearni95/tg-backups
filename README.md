@@ -9,10 +9,38 @@ A command line tool that creates and restores zip backups using Telegram groups 
 3. `tgb login`. It asks for an API id and hash from https://my.telegram.org/apps if none are saved yet. They can also go in `.env` (`cp .env.example .env`), or be set with `tgb credentials set`.
 4. Choose where backups go: `tgb groups create <name>` makes a new group. To use one the account is already in, run `tgb groups available`, then `tgb groups use <id>`. Backup group names start with `TGB-`, in capitals: the tool adds it to the groups it creates, and only offers existing groups that have it.
 
+## Menus
+
+Run `tgb` with no command for an interactive tool. It signs you in if needed, then offers menus to:
+
+- list, upload, restore and delete backups in the chosen group
+- choose, create and share backup groups
+- mark local files and folders for scheduled backup, choose how often each one runs, back them up now, and stop tracking them
+- see your status and sign out
+
+Arrow keys move, Enter picks, and Ctrl+C leaves. Every menu action is also a command (below), for scripts.
+
+## Scheduled backups
+
+Mark a file or folder with the menu, or with `tgb tracked add <path> --schedule <when>`. `<when>` is `hourly`, `daily` (03:00), `weekly` (Sunday 03:00), `monthly` (the 1st, 03:00), or any cron expression such as `"30 2 * * 1-5"`.
+
+- tgb keeps a block of lines in your crontab, one per tracked path, and rewrites it whenever you add, reschedule or remove one. The rest of your crontab is left alone. `tgb tracked sync` rewrites it again, and `crontab -l` shows it.
+- Each line runs `tgb tracked run <id>` with this machine's `node` and the built `dist/cli.js`, so run `pnpm build` first and again after updating. Output goes to `~/tg-backups/cron.log`.
+- A `.zip` is uploaded as it is. Any other file, or a folder, is zipped first (`notes.txt` becomes `notes.txt.zip`). If nothing changed since the last backup, nothing is uploaded.
+- **If a tracked path is missing when its backup is due**, tgb sends a message to its group with everything it knows about it: the path, whether it was a file or folder, why it couldn't be read, the machine, when it was checked, the schedule, when it was tracked, the last run and last backup (with its id), and its last known size and modification time.
+- Runs take turns, so two jobs due in the same minute don't clash. Cron uses the credentials saved by `tgb login` (in `~/tg-backups`), not a `.env` file.
+
 ## Commands
 
 | Command                                  | What it does                                                     |
 | ---------------------------------------- | ---------------------------------------------------------------- |
+| `tgb` or `tgb menu`                      | Interactive menus for all of the below                           |
+| `tgb tracked [list]`                     | Tracked paths, their schedules and last runs                     |
+| `tgb tracked add <path> [-s <when>]`     | Track a file or folder (default `daily`) and schedule it in cron |
+| `tgb tracked schedule <id> <when>`       | Change how often a tracked path is backed up                     |
+| `tgb tracked remove <ids...>`            | Stop tracking; backups already made stay                         |
+| `tgb tracked run [ids...]`               | Back up tracked paths now (every one, without ids)               |
+| `tgb tracked sync`                       | Rewrite tgb's crontab lines                                      |
 | `tgb status`                             | Credentials, account and chosen group                            |
 | `tgb login [--phone [number]]`           | Sign in by QR code, or by a code sent to a phone number          |
 | `tgb logout`                             | Sign out, and wipe the session and local indexes                 |
@@ -30,9 +58,9 @@ A command line tool that creates and restores zip backups using Telegram groups 
 | `tgb delete-all --group <group>`         | Delete every message in a group (asks you to type its title)     |
 | `tgb transfer export\|import`            | Move credentials, and optionally the session, to another machine |
 
-- `--group <id or title>` picks the group for `list`, `upload`, `restore` and `delete`. Without it, they use the chosen group.
-- `--json` on `status`, `groups list`, `groups available`, `groups info` and `list` prints JSON.
-- `--yes` skips the confirmation on `delete`, `delete-all` and `credentials clear`.
+- `--group <id or title>` picks the group for `list`, `upload`, `restore`, `delete` and `tracked add`. Without it, they use the chosen group.
+- `--json` on `status`, `groups list`, `groups available`, `groups info`, `list` and `tracked list` prints JSON.
+- `--yes` skips the confirmation on `delete`, `delete-all`, `tracked remove` and `credentials clear`.
 - `--data-dir <path>` and `--verbose` go before the command: `tgb --verbose list`.
 - `tgb <command> --help` shows every option.
 

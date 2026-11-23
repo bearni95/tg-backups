@@ -351,6 +351,26 @@ export class FakeTelegram {
 			}
 			case 'messages.sendMedia':
 				return this.send(request);
+			case 'messages.sendMessage': {
+				const roomId = roomOf(request.peer);
+				const room = this.rooms.get(roomId);
+				const id = room ? room.nextId++ : this.nextId++;
+				this.messagesIn(roomId).push({
+					_: 'message',
+					id,
+					peerId: room ? { _: 'peerChannel', channelId: roomId } : this.peer,
+					date: id,
+					message: request.message
+				});
+				return {
+					_: 'updates',
+					updates: [{ _: 'updateMessageID', id, randomId: request.randomId }],
+					users: [],
+					chats: [],
+					date: 1,
+					seq: 0
+				};
+			}
 			case 'upload.getFile': {
 				const { location, offset, limit } = request;
 				if (location._ !== 'inputDocumentFileLocation' || offset % 4096 !== 0) {

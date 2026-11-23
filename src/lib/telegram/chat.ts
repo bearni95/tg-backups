@@ -127,6 +127,30 @@ export async function deleteAndConfirm(
 	};
 }
 
+/** Telegram's limit for one text message. */
+export const MAX_TEXT_LENGTH = 4096;
+
+/** Post a plain text message and return its id. Reconcile skips it: it has no document. */
+export async function sendText(
+	connection: Connection,
+	peer: PeerRef,
+	text: string
+): Promise<number> {
+	const randomId = randomLong();
+	const updates = await connection.invoke({
+		_: 'messages.sendMessage',
+		peer: telegramPeerAdapter.toInputPeer(peer),
+		message: text.slice(0, MAX_TEXT_LENGTH),
+		noWebpage: true,
+		randomId
+	});
+	const id = telegramMessageAdapter.sentIdFrom(updates, randomId);
+	if (id === null) {
+		throw StorageError.telegram('sendMessage did not return the id of the sent message');
+	}
+	return id;
+}
+
 /** Post an uploaded file as a document and return its message id. */
 export async function sendDocument(
 	connection: Connection,

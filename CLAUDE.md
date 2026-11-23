@@ -10,10 +10,13 @@ src/
 │   ├── index.ts          # Entry point (bundled to dist/cli.js)
 │   ├── program.ts        # Builds the commander program
 │   ├── context.ts        # Opens the engine, resolves --group, prints errors
+│   ├── interactive.ts    # The menus `tgb` shows without a command
+│   ├── cron-command.ts   # The node and script cron runs
 │   ├── progress.ts       # Upload and restore progress bars
 │   └── commands/         # One file per command family
 ├── lib/                  # The backup engine; knows nothing about the terminal
-│   └── telegram/         # Telegram storage (read its CLAUDE.md first)
+│   ├── telegram/         # Telegram storage (read its CLAUDE.md first)
+│   └── tracked/          # Tracked paths, their crontab lines and scheduled runs
 ├── adapters/classes/     # Data transformation, including what the CLI prints
 ├── types/                # TypeScript type definitions
 └── utils/                # Pure utility functions
