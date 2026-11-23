@@ -7,7 +7,7 @@ Run `tgb` on its own for menus, or use the commands below in scripts.
 ## Requirements
 
 - Node.js 24 or later, and pnpm.
-- A Telegram account, and an API id and hash for it from https://my.telegram.org/apps (under "API development tools").
+- A Telegram account, and an API id and hash for it (see [Telegram API credentials](#telegram-api-credentials)).
 - For scheduled backups: `cron` and the `crontab` command (Linux, macOS, WSL).
 
 ## Install
@@ -22,9 +22,57 @@ npm link        # puts `tgb` on your PATH
 
 Without `npm link`, run `node dist/cli.js` in place of `tgb`. After pulling updates, run `pnpm install` and `pnpm build` again: cron runs the built `dist/cli.js`.
 
+## Telegram API credentials
+
+`tgb` talks to Telegram as a client app of its own, the way Telegram Desktop does, so it needs an API id and an API hash. Telegram gives these out for free, once per account. You only do this once; the same pair works on every machine.
+
+### Create them
+
+1. Open https://my.telegram.org in a browser and enter your account's phone number in international format, such as `+34600123456`.
+2. Telegram sends a login code **as a message in the Telegram app** (from the "Telegram" service account), not by SMS. Type it on the page.
+3. Choose **API development tools**.
+4. Fill in the "Create new application" form:
+
+   | Field       | What to enter                                       |
+   | ----------- | --------------------------------------------------- |
+   | App title   | Anything, for example `tg-backups`                  |
+   | Short name  | 5 to 32 letters and digits, for example `tgbackups` |
+   | URL         | Leave empty                                         |
+   | Platform    | `Desktop`                                           |
+   | Description | Optional, for example `Personal backups`            |
+
+5. Choose **Create application**. The page now shows **App api_id** (a number) and **App api_hash** (32 hexadecimal characters). That is all `tgb` needs; ignore the server addresses and public keys below them.
+
+You can come back to https://my.telegram.org/apps at any time to see the pair again. Each account has only one application, so if one exists already, use its values.
+
+If the form only answers `ERROR`, try again with ad blockers and VPNs off, or from another browser or network: Telegram rejects the form from some of them. Using the phone number of an account that has been in use for a while also helps.
+
+The api_hash is a secret: anyone who has it can build a client that signs in as your app. Don't commit it or post it. The api_id alone is harmless, which is why `tgb credentials show` prints only that.
+
+### Give them to tgb
+
+Pick one:
+
+- **Let `tgb` ask.** Run `tgb login` (or just `tgb`). With no credentials saved, it asks for the API id and hash and saves them in the data folder (`~/tg-backups/telegram/credentials.json`).
+- **Save them directly.** `tgb credentials set --api-id 1234567 --api-hash 0123456789abcdef0123456789abcdef`. Leave either option out to be asked for it, which keeps the hash out of your shell history.
+- **Use a `.env` file.** Copy the example and fill in both values:
+
+  ```sh
+  cp .env.example .env
+  ```
+
+  ```ini
+  TELEGRAM_API_ID=1234567
+  TELEGRAM_API_HASH=0123456789abcdef0123456789abcdef
+  ```
+
+  `tgb` reads the nearest `.env` above the folder it runs in. Setting `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` as environment variables in some other way works the same.
+
+Saved credentials win over the environment, so after `tgb credentials set` or a login that asked for them, `.env` is no longer read for them. For scheduled backups, save the credentials with one of the first two options: cron runs from your home folder, where the project's `.env` isn't found. `tgb credentials clear` forgets saved credentials, and signs this machine out.
+
 ## Getting started
 
-1. **Sign in.** Run `tgb login`. If no API credentials are saved yet, it asks for the API id and hash first. Then it shows a QR code: in the Telegram app, open Settings > Devices > Link Desktop Device and scan it. To get a code by phone instead, run `tgb login --phone`. If the account has a two-step verification password, it asks for that too.
+1. **Sign in.** Run `tgb login`. If no API credentials are saved or set in the environment yet, it asks for the API id and hash first ([how to get them](#telegram-api-credentials)). Then it shows a QR code: in the Telegram app, open Settings > Devices > Link Desktop Device and scan it. To get a code by phone instead, run `tgb login --phone`. If the account has a two-step verification password, it asks for that too.
 2. **Choose where backups go.** Run `tgb groups create <name>` to create a private group and choose it. To use a group the account is already in, run `tgb groups available`, then `tgb groups use <id>`. Backup group titles start with `TGB-` in capitals: `tgb` adds the prefix to the groups it creates, and only offers existing groups that already have it.
 3. **Back something up.** `tgb upload ~/exports/photos.zip`, then `tgb list` to see it, and `tgb restore <id>` to get it back.
 
